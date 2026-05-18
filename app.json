@@ -1,0 +1,38 @@
+{
+  "expo": {
+    "name": "Transvert",
+    "slug": "transvert",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "scheme": "transvert",
+    "userInterfaceStyle": "dark",
+    "splash": {
+      "resizeMode": "contain",
+      "backgroundColor": "#07121E"
+    },
+    "ios": {
+      "supportsTablet": false
+    },
+    "android": {
+      "permissions": ["CAMERA"]
+    },
+    "web": {
+      "bundler": "metro"
+    },
+    "plugins": [
+      "expo-router",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Allow Transvert to scan receipts and labels."
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Allow Transvert to import photos for OCR."
+        }
+      ]
+    ]
+  }
+}
