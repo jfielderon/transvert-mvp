@@ -1,0 +1,32 @@
+{
+  "expo": {
+    "name": "Transvert",
+    "slug": "transvert",
+    "scheme": "transvert",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "dark",
+    "splash": {
+      "backgroundColor": "#06111f",
+      "resizeMode": "contain"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.transvert.app",
+      "infoPlist": {
+        "NSPhotoLibraryUsageDescription": "Transvert lets you import images for mocked OCR price conversion."
+      }
+    },
+    "android": {
+      "package": "com.transvert.app",
+      "permissions": ["READ_MEDIA_IMAGES"]
+    },
+    "plugins": [
+      "expo-router",
+      "expo-image-picker"
+    ],
+    "experiments": {
+      "typedRoutes": true
+    }
+  }
+}
