@@ -3,31 +3,54 @@ import { useEffect, useMemo, useState } from 'react';
 import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { GlassCard } from '@/components/GlassCard';
 import { Screen } from '@/components/Screen';
-import { convertWithRates, formatCurrency, formatGbp, getRateSnapshot, loadFxRates, type FxRates } from '@/services/conversion';
+import { convertBetween, convertWithRates, formatCurrency, getRateSnapshot, loadFxRates } from '@/services/fx';
+import type { FxRates } from '@/services/fx/types';
 import { colors } from '@/theme/colors';
+import type { CurrencyCode } from '@/types/scan';
 
 const quickAmounts = [10, 20, 50, 100];
 const trend = [52, 58, 61, 57, 54, 50, 48, 51, 56, 60, 63, 61, 58, 55, 57, 59];
+const currencies: CurrencyCode[] = ['EUR', 'GBP', 'USD'];
+const currencyNames: Record<CurrencyCode, string> = {
+  EUR: 'Euro',
+  GBP: 'British Pound',
+  USD: 'US Dollar',
+};
 
 export default function ConvertScreen() {
   const [amount, setAmount] = useState('100');
   const [rates, setRates] = useState<FxRates>(getRateSnapshot().rates);
-  const [provider, setProvider] = useState(getRateSnapshot().provider);
+  const [status, setStatus] = useState(getRateSnapshot().status);
+  const [fromCurrency, setFromCurrency] = useState<CurrencyCode>('EUR');
+  const [toCurrency, setToCurrency] = useState<CurrencyCode>('GBP');
   const numericAmount = Number(amount.replace(',', '.')) || 0;
-  const converted = useMemo(() => convertWithRates(numericAmount, 'EUR', rates), [numericAmount, rates]);
+  const converted = useMemo(() => {
+    const gbpValue = convertWithRates(numericAmount, fromCurrency, rates);
+    return toCurrency === 'GBP' ? gbpValue : gbpValue / (rates[toCurrency] || 1);
+  }, [fromCurrency, numericAmount, rates, toCurrency]);
 
   useEffect(() => {
     loadFxRates().then((snapshot) => {
       setRates(snapshot.rates);
-      setProvider(snapshot.provider);
+      setStatus(snapshot.status);
     });
   }, []);
+
+  const cycleCurrency = (current: CurrencyCode, setter: (currency: CurrencyCode) => void) => {
+    const index = currencies.indexOf(current);
+    setter(currencies[(index + 1) % currencies.length]);
+  };
+
+  const swapCurrencies = () => {
+    setFromCurrency(toCurrency);
+    setToCurrency(fromCurrency);
+  };
 
   return (
     <Screen>
       <View style={styles.header}>
         <Text style={styles.eyebrow}>CONVERT</Text>
-        <Text style={styles.title}>Know the real price before your card does.</Text>
+        <Text style={styles.title}>No more roughly, just know more.</Text>
       </View>
 
       <GlassCard style={styles.panel}>
@@ -42,44 +65,44 @@ export default function ConvertScreen() {
               placeholderTextColor={colors.dim}
               style={styles.amountInput}
             />
-            <Text style={styles.meta}>Euro</Text>
+            <Text style={styles.meta}>{currencyNames[fromCurrency]}</Text>
           </View>
-          <View style={styles.selector}>
-            <Text style={styles.selectorText}>EUR</Text>
+          <Pressable style={styles.selector} onPress={() => cycleCurrency(fromCurrency, setFromCurrency)}>
+            <Text style={styles.selectorText}>{fromCurrency}</Text>
             <Ionicons name="chevron-down" color={colors.dim} size={16} />
-          </View>
+          </Pressable>
         </View>
 
         <View style={styles.dividerRow}>
           <View style={styles.divider} />
-          <View style={styles.swap}>
+          <Pressable style={styles.swap} onPress={swapCurrencies}>
             <MaterialCommunityIcons name="swap-vertical" color={colors.cyan} size={20} />
-          </View>
+          </Pressable>
           <View style={styles.divider} />
         </View>
 
         <View style={styles.currencyRow}>
           <View>
             <Text style={[styles.label, styles.accentLabel]}>To</Text>
-            <Text style={styles.converted}>{formatGbp(converted)}</Text>
-            <Text style={styles.meta}>British Pound</Text>
+            <Text style={styles.converted}>{formatCurrency(converted, toCurrency)}</Text>
+            <Text style={styles.meta}>{currencyNames[toCurrency]}</Text>
           </View>
-          <View style={styles.selector}>
-            <Text style={styles.selectorText}>GBP</Text>
+          <Pressable style={styles.selector} onPress={() => cycleCurrency(toCurrency, setToCurrency)}>
+            <Text style={styles.selectorText}>{toCurrency}</Text>
             <Ionicons name="chevron-down" color={colors.dim} size={16} />
-          </View>
+          </Pressable>
         </View>
       </GlassCard>
 
       <View style={styles.rateRow}>
-        <Text style={styles.rate}>1 EUR = {rates.EUR.toFixed(4)} GBP</Text>
-        <Text style={styles.estimate}>{provider}</Text>
+        <Text style={styles.rate}>1 {fromCurrency} = {convertBetween(1, fromCurrency, toCurrency, rates).toFixed(4)} {toCurrency}</Text>
+        <Text style={styles.estimate}>{status}</Text>
       </View>
 
       <View style={styles.quickRow}>
         {quickAmounts.map((value) => (
           <Pressable key={value} style={styles.quickButton} onPress={() => setAmount(String(value))}>
-            <Text style={styles.quickText}>{formatCurrency(value, 'EUR')}</Text>
+            <Text style={styles.quickText}>{formatCurrency(value, fromCurrency)}</Text>
           </Pressable>
         ))}
       </View>

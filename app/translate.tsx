@@ -1,25 +1,37 @@
 import { Ionicons } from '@expo/vector-icons';
-import { useMemo, useState } from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { useState } from 'react';
+import { ActivityIndicator, Pressable, StyleSheet, Text, TextInput, useWindowDimensions, View } from 'react-native';
 import { GlassCard } from '@/components/GlassCard';
 import { Screen } from '@/components/Screen';
-import { SAMPLE_INPUT_PLACEHOLDER } from '@/services/ocrService';
-import { detectPrices } from '@/services/priceParser';
-import { translateMenuText, translateText } from '@/services/translation';
+import { translateText } from '@/services/translate';
 import { colors } from '@/theme/colors';
 
+const languages = ['Auto', 'Spanish', 'French', 'Italian', 'German', 'Portuguese', 'English', 'Dutch'] as const;
+const targetLanguages = ['English', 'Spanish', 'French', 'Italian', 'German', 'Portuguese', 'Dutch'] as const;
+
+function nextValue<T extends readonly string[]>(items: T, current: T[number]): T[number] {
+  const index = items.indexOf(current);
+  return items[(index + 1) % items.length];
+}
+
 export default function TranslateScreen() {
+  const { width } = useWindowDimensions();
+  const [sourceLanguage, setSourceLanguage] = useState<(typeof languages)[number]>('Auto');
+  const [targetLanguage, setTargetLanguage] = useState<(typeof targetLanguages)[number]>('English');
   const [text, setText] = useState('');
   const [translated, setTranslated] = useState('');
-  const [provider, setProvider] = useState('local preview');
+  const [provider, setProvider] = useState('ready');
   const [isTranslating, setIsTranslating] = useState(false);
-  const preview = useMemo(() => translateMenuText(text), [text]);
-  const prices = useMemo(() => detectPrices(text), [text]);
+  const isWide = width >= 720;
 
   const handleTranslate = async () => {
     if (!text.trim()) return;
     setIsTranslating(true);
-    const result = await translateText({ text, targetLanguage: 'English' });
+    const result = await translateText({
+      text,
+      sourceLanguage: sourceLanguage === 'Auto' ? undefined : sourceLanguage,
+      targetLanguage,
+    });
     setTranslated(result.text);
     setProvider(result.provider);
     setIsTranslating(false);
@@ -29,47 +41,54 @@ export default function TranslateScreen() {
     <Screen>
       <View style={styles.header}>
         <Text style={styles.eyebrow}>TRANSLATE</Text>
-        <Text style={styles.title}>Make foreign text readable before you pay.</Text>
+        <Text style={styles.title}>Read it your way.</Text>
       </View>
 
       <GlassCard style={styles.panel}>
         <View style={styles.languageRow}>
-          <Text style={styles.language}>Auto</Text>
-          <Ionicons name="arrow-forward" color={colors.dim} size={16} />
-          <Text style={styles.language}>English</Text>
+          <Pressable style={styles.selector} onPress={() => setSourceLanguage(nextValue(languages, sourceLanguage))}>
+            <Text style={styles.selectorLabel}>From</Text>
+            <Text style={styles.selectorText}>{sourceLanguage}</Text>
+            <Ionicons name="chevron-down" color={colors.dim} size={15} />
+          </Pressable>
+          <Ionicons name="arrow-forward" color={colors.dim} size={17} />
+          <Pressable style={styles.selector} onPress={() => setTargetLanguage(nextValue(targetLanguages, targetLanguage))}>
+            <Text style={styles.selectorLabel}>To</Text>
+            <Text style={styles.selectorText}>{targetLanguage}</Text>
+            <Ionicons name="chevron-down" color={colors.dim} size={15} />
+          </Pressable>
         </View>
+
         <TextInput
           value={text}
-          onChangeText={setText}
+          onChangeText={(value) => {
+            setText(value);
+            setTranslated('');
+          }}
           multiline
-          placeholder={SAMPLE_INPUT_PLACEHOLDER}
+          placeholder="Type or paste text to translate."
           placeholderTextColor={colors.dim}
           style={styles.input}
         />
       </GlassCard>
 
       <Pressable style={styles.translateButton} onPress={handleTranslate} disabled={isTranslating || !text.trim()}>
-        {isTranslating ? <ActivityIndicator color={colors.navy950} /> : <Ionicons name="sparkles-outline" color={colors.navy950} size={18} />}
+        {isTranslating ? <ActivityIndicator color={colors.navy950} /> : <Ionicons name="language-outline" color={colors.navy950} size={18} />}
         <Text style={styles.translateText}>Translate</Text>
       </Pressable>
 
-      <GlassCard style={styles.result}>
-        <View style={styles.resultHeader}>
-          <Text style={styles.label}>Result</Text>
-          <Text style={styles.provider}>{provider}</Text>
-        </View>
-        <Text style={styles.resultText}>{translated || preview || 'Enter text to generate a local preview.'}</Text>
-      </GlassCard>
-
-      <View style={styles.metrics}>
-        <View style={styles.metric}>
-          <Text style={styles.metricValue}>{prices.length}</Text>
-          <Text style={styles.metricLabel}>prices detected</Text>
-        </View>
-        <View style={styles.metric}>
-          <Text style={styles.metricValue}>FX</Text>
-          <Text style={styles.metricLabel}>ready for scan</Text>
-        </View>
+      <View style={[styles.resultsGrid, isWide && styles.resultsGridWide]}>
+        <GlassCard style={[styles.result, isWide && styles.resultWide]}>
+          <Text style={styles.label}>Original</Text>
+          <Text style={styles.resultText}>{text || 'Original text will appear here.'}</Text>
+        </GlassCard>
+        <GlassCard style={[styles.result, styles.translatedCard, isWide && styles.resultWide]}>
+          <View style={styles.resultHeader}>
+            <Text style={[styles.label, styles.cyanLabel]}>Translated</Text>
+            <Text style={styles.provider}>{provider}</Text>
+          </View>
+          <Text style={styles.resultText}>{translated || 'Translation will appear here.'}</Text>
+        </GlassCard>
       </View>
     </Screen>
   );
@@ -105,10 +124,28 @@ const styles = StyleSheet.create({
     borderBottomColor: colors.border,
     paddingBottom: 14,
   },
-  language: {
+  selector: {
+    flex: 1,
+    minHeight: 48,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: colors.border,
+    paddingHorizontal: 12,
+  },
+  selectorLabel: {
+    color: colors.dim,
+    fontSize: 10,
+    fontWeight: '800',
+    textTransform: 'uppercase',
+  },
+  selectorText: {
+    flex: 1,
     color: colors.text,
     fontSize: 14,
-    fontWeight: '700',
+    fontWeight: '800',
   },
   input: {
     minHeight: 190,
@@ -130,56 +167,49 @@ const styles = StyleSheet.create({
   },
   translateText: {
     color: colors.navy950,
-    fontSize: 15,
+    fontSize: 16,
     fontWeight: '800',
   },
-  result: {
+  resultsGrid: {
+    gap: 12,
     marginTop: 16,
+  },
+  resultsGridWide: {
+    flexDirection: 'row',
+  },
+  result: {
+    minHeight: 180,
+  },
+  resultWide: {
+    flex: 1,
+  },
+  translatedCard: {
     borderColor: colors.cyanGlow,
   },
   resultHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
+    gap: 12,
   },
   label: {
-    color: colors.cyan,
+    color: colors.dim,
     fontSize: 10,
-    fontWeight: '700',
+    fontWeight: '800',
     letterSpacing: 2.4,
     textTransform: 'uppercase',
+  },
+  cyanLabel: {
+    color: colors.cyan,
   },
   provider: {
     color: colors.dim,
     fontSize: 11,
+    fontWeight: '700',
   },
   resultText: {
     marginTop: 14,
     color: colors.text,
     fontSize: 16,
     lineHeight: 25,
-  },
-  metrics: {
-    flexDirection: 'row',
-    gap: 10,
-    marginTop: 16,
-  },
-  metric: {
-    flex: 1,
-    minHeight: 92,
-    justifyContent: 'center',
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: colors.border,
-    paddingHorizontal: 16,
-  },
-  metricValue: {
-    color: colors.text,
-    fontSize: 24,
-    fontWeight: '700',
-  },
-  metricLabel: {
-    marginTop: 6,
-    color: colors.dim,
-    fontSize: 12,
   },
 });

@@ -6,6 +6,13 @@ expo-env.d.ts
 # @end expo-cli
 
 node_modules/
+.expo
 .expo/
+/.expo/
+.expo/*
 .env
 .env.local
+metro.log
+metro.err
+web-metro.log
+web-metro.err

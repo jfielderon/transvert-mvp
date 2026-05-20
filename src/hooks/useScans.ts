@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { getSavedScans, saveScan } from '@/services/scanStorage';
+import { deleteScan, getSavedScans, saveScan } from '@/storage/scans';
 import type { ScanRecord } from '@/types/scan';
 
 export function useScans() {
@@ -18,6 +18,11 @@ export function useScans() {
     setScans(next);
   }, []);
 
+  const removeScan = useCallback(async (id: string) => {
+    const next = await deleteScan(id);
+    setScans(next);
+  }, []);
+
   useEffect(() => {
     refresh();
   }, [refresh]);
@@ -27,5 +32,6 @@ export function useScans() {
     isLoading,
     refresh,
     persistScan,
+    removeScan,
   };
 }

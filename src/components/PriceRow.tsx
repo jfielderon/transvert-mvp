@@ -1,5 +1,5 @@
 import { StyleSheet, Text, View } from 'react-native';
-import { formatCurrency, formatGbp } from '@/services/conversion';
+import { formatCurrency, formatGbp } from '@/services/fx';
 import { colors } from '@/theme/colors';
 import type { DetectedPrice } from '@/types/scan';
 

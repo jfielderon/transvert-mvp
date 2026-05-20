@@ -4,6 +4,9 @@
     "slug": "transvert",
     "scheme": "transvert",
     "version": "1.0.0",
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
     "orientation": "portrait",
     "userInterfaceStyle": "dark",
     "splash": {
@@ -12,21 +15,60 @@
     },
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.transvert.app",
+      "bundleIdentifier": "com.yourcompany.transvert",
+      "buildNumber": "1",
       "infoPlist": {
-        "NSPhotoLibraryUsageDescription": "Transvert lets you import images for mocked OCR price conversion."
+        "NSCameraUsageDescription": "Transvert uses the camera to scan foreign text, menus, receipts and prices before you pay.",
+        "NSPhotoLibraryUsageDescription": "Transvert lets you import travel images for OCR, translation and real-cost analysis.",
+        "NSPhotoLibraryAddUsageDescription": "Transvert can save shared scan previews if you choose to export them.",
+        "NSLocationWhenInUseUsageDescription": "Transvert will use your location to find low-fee ATMs nearby when ATM intelligence is enabled.",
+        "NSAppTransportSecurity": {
+          "NSAllowsArbitraryLoads": false
+        },
+        "ITSAppUsesNonExemptEncryption": false
       }
     },
     "android": {
       "package": "com.transvert.app",
-      "permissions": ["READ_MEDIA_IMAGES"]
+      "versionCode": 1,
+      "permissions": [
+        "android.permission.CAMERA",
+        "android.permission.READ_MEDIA_IMAGES",
+        "android.permission.ACCESS_FINE_LOCATION",
+        "android.permission.RECORD_AUDIO",
+        "android.permission.ACCESS_COARSE_LOCATION"
+      ]
     },
     "plugins": [
       "expo-router",
-      "expo-image-picker"
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Transvert uses the camera to scan foreign text, menus, receipts and prices before you pay."
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Transvert lets you import travel images for OCR, translation and real-cost analysis."
+        }
+      ],
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "Transvert uses your location to find low-fee ATMs nearby when ATM intelligence is enabled."
+        }
+      ],
+      "expo-font"
     ],
     "experiments": {
       "typedRoutes": true
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "9fddc4aa-1bdb-489b-a39b-94acfa04910b"
+      }
     }
   }
 }

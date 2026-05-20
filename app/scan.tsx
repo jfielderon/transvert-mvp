@@ -5,31 +5,59 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Image, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { GlassCard } from '@/components/GlassCard';
 import { Screen } from '@/components/Screen';
-import { formatGbp, getRateSnapshot, loadFxRates, type FxRates } from '@/services/conversion';
-import { createId } from '@/services/ids';
-import { SAMPLE_INPUT_PLACEHOLDER, prepareImageForManualText } from '@/services/ocrService';
+import { formatGbp, getRateSnapshot, loadFxRates } from '@/services/fx';
+import type { FxRates } from '@/services/fx/types';
+import { SAMPLE_INPUT_PLACEHOLDER, prepareImageForManualText } from '@/services/ocr';
 import { detectPricesWithRates, totalGbp } from '@/services/priceParser';
-import { saveScan } from '@/services/scanStorage';
-import { translateMenuText, translateText } from '@/services/translation';
+import { saveScan } from '@/storage/scans';
+import { processScanInput } from '@/services/scan/processScan';
+import { translateMenuText } from '@/services/translate';
 import { colors } from '@/theme/colors';
-import type { ScanRecord } from '@/types/scan';
+import type { ScanMode } from '@/types/scan';
+
+type SelectedImage = {
+  uri: string;
+  base64?: string;
+  mimeType?: string;
+};
 
 export default function ScanScreen() {
   const [imageUri, setImageUri] = useState<string | null>(null);
+  const [selectedImage, setSelectedImage] = useState<SelectedImage | null>(null);
   const [text, setText] = useState('');
+  const [ocrStatus, setOcrStatus] = useState<'success' | 'fallback' | 'failed'>('fallback');
   const [isPicking, setIsPicking] = useState(false);
+  const [isCapturing, setIsCapturing] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [notice, setNotice] = useState('Camera preview unavailable in Expo Go. Upload an image or paste text.');
+  const [pipelineState, setPipelineState] = useState('Upload image');
   const [error, setError] = useState<string | null>(null);
   const [rates, setRates] = useState<FxRates>(getRateSnapshot().rates);
+  const [mode, setMode] = useState<ScanMode>('menu');
 
   useEffect(() => {
     loadFxRates().then((snapshot) => setRates(snapshot.rates));
   }, []);
 
-  const prices = useMemo(() => detectPricesWithRates(text, rates), [rates, text]);
+  const prices = useMemo(() => detectPricesWithRates(text, rates, mode), [mode, rates, text]);
   const total = useMemo(() => totalGbp(prices), [prices]);
   const translated = useMemo(() => translateMenuText(text), [text]);
+
+  const selectImage = useCallback((image: SelectedImage) => {
+    setSelectedImage(image);
+    setImageUri(image.uri);
+    setText('');
+    setOcrStatus('fallback');
+    setError(null);
+    setPipelineState('Upload image');
+    setNotice('Image ready. Tap Process scan to extract text with OCR.Space.');
+  }, []);
+
+  const applyOcrResult = useCallback((result: Awaited<ReturnType<typeof prepareImageForManualText>>) => {
+    setOcrStatus(result.status);
+    setNotice(result.warnings[0] ?? (result.status === 'success' ? 'OCR extracted text. Review and edit before processing.' : 'Review or enter text before processing.'));
+    setText(result.text);
+  }, []);
 
   const uploadImage = useCallback(async () => {
     setError(null);
@@ -41,53 +69,115 @@ export default function ScanScreen() {
 
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        base64: true,
         quality: 1,
       });
 
       if (result.canceled || !result.assets[0]?.uri) return;
 
-      const uri = result.assets[0].uri;
-      const fallback = await prepareImageForManualText(uri);
-      setImageUri(uri);
-      setNotice(fallback.warnings[0]);
-      if (fallback.text) setText(fallback.text);
+      const asset = result.assets[0];
+      selectImage({ uri: asset.uri, base64: asset.base64 ?? undefined, mimeType: asset.mimeType ?? undefined });
     } catch (uploadError) {
       setError(uploadError instanceof Error ? uploadError.message : 'Could not upload image.');
     } finally {
       setIsPicking(false);
     }
-  }, []);
+  }, [applyOcrResult]);
+
+  const enableCamera = useCallback(async () => {
+    setError(null);
+
+    try {
+      setIsCapturing(true);
+      const permission = await ImagePicker.requestCameraPermissionsAsync();
+      if (!permission.granted) {
+        setNotice('Camera permission is unavailable. Upload an image or paste text instead.');
+        return;
+      }
+
+      const result = await ImagePicker.launchCameraAsync({
+        allowsEditing: false,
+        base64: true,
+        quality: 1,
+      });
+
+      if (result.canceled || !result.assets[0]?.uri) return;
+
+      const asset = result.assets[0];
+      selectImage({ uri: asset.uri, base64: asset.base64 ?? undefined, mimeType: asset.mimeType ?? undefined });
+    } catch (cameraError) {
+      setError(cameraError instanceof Error ? cameraError.message : 'Could not capture image.');
+    } finally {
+      setIsCapturing(false);
+    }
+  }, [selectImage]);
 
   const processText = useCallback(async () => {
-    const trimmed = text.trim();
-    if (!trimmed) {
-      setError('Paste or enter text before processing.');
-      return;
+    try {
+      setIsProcessing(true);
+      setError(null);
+
+      let workingText = text.trim();
+      let workingOcrStatus = ocrStatus;
+
+      if (selectedImage) {
+        setPipelineState('1/5 OCR');
+        setNotice('Extracting text with OCR.Space...');
+        const ocr = await prepareImageForManualText(selectedImage);
+        applyOcrResult(ocr);
+        workingText = ocr.text.trim();
+        workingOcrStatus = ocr.status;
+
+        if (ocr.status === 'failed') {
+          throw new Error(ocr.warnings[0] ?? 'OCR failed. Try another image or enter text manually.');
+        }
+
+        setPipelineState('2/5 Cleaning text');
+      }
+
+      if (!workingText) {
+        throw new Error('No text found. Edit the text box manually or upload a clearer image.');
+      }
+
+      setPipelineState('3/5 Translating');
+      const scanRecord = await processScanInput({
+        text: workingText,
+        imageUri: imageUri ?? undefined,
+        source: imageUri ? 'library' : 'manual',
+        ocrStatus: workingOcrStatus,
+        mode,
+      });
+
+      setPipelineState('4/5 Detecting prices');
+      setRates(getRateSnapshot().rates);
+      setPipelineState('5/5 EUR to GBP complete');
+      await saveScan(scanRecord);
+      router.push({ pathname: '/results', params: { id: scanRecord.id } });
+    } catch (processError) {
+      setError(processError instanceof Error ? processError.message : 'Could not process scan.');
+      setPipelineState('Error');
+    } finally {
+      setIsProcessing(false);
     }
-
-    setIsProcessing(true);
-    const translation = await translateText({ text: trimmed, targetLanguage: 'English' });
-    const detectedPrices = detectPricesWithRates(trimmed, rates);
-    const scanRecord: ScanRecord = {
-      id: createId('scan'),
-      createdAt: new Date().toISOString(),
-      imageUri: imageUri ?? undefined,
-      originalText: trimmed,
-      translatedText: translation.text,
-      prices: detectedPrices,
-      estimatedTotalGbp: totalGbp(detectedPrices),
-      source: imageUri ? 'library' : 'manual',
-      ocrStatus: 'fallback',
-    };
-
-    await saveScan(scanRecord);
-    setIsProcessing(false);
-    router.push({ pathname: '/results', params: { id: scanRecord.id } });
-  }, [imageUri, rates, text]);
+  }, [applyOcrResult, imageUri, mode, ocrStatus, selectedImage, text]);
 
   const useExample = () => {
+    setSelectedImage(null);
+    setImageUri(null);
     setText(SAMPLE_INPUT_PLACEHOLDER);
-    setNotice('Example text loaded. Edit it and Transvert will process your current text.');
+    setOcrStatus('fallback');
+    setPipelineState('Text extracted');
+    setNotice('Example text loaded. Edit it or process it through the pipeline.');
+    setError(null);
+  };
+
+  const clearText = () => {
+    setText('');
+    setSelectedImage(null);
+    setImageUri(null);
+    setOcrStatus('fallback');
+    setPipelineState('Upload image');
+    setNotice('Input cleared. Upload an image or paste the text you want Transvert to process.');
   };
 
   return (
@@ -97,10 +187,10 @@ export default function ScanScreen() {
           <Ionicons name="chevron-back" color={colors.text} size={20} />
         </Pressable>
         <View style={styles.titleBlock}>
-          <Text style={styles.title}>Vision Scan</Text>
-          <Text style={styles.subtitle}>Translate, detect prices, convert instantly.</Text>
+          <Text style={styles.title}>See the world your way.</Text>
+          <Text style={styles.subtitle}>OCR, translate, detect prices, convert.</Text>
         </View>
-        <Pressable style={styles.iconButton} onPress={() => setNotice('Camera preview unavailable in Expo Go. Upload or paste text instead.')}>
+        <Pressable style={styles.iconButton} onPress={enableCamera}>
           <Ionicons name="camera-outline" color={colors.muted} size={18} />
         </Pressable>
       </View>
@@ -108,12 +198,12 @@ export default function ScanScreen() {
       <View style={styles.preview}>
         <View style={styles.scanGlow} />
         {imageUri ? (
-          <Image source={{ uri: imageUri }} style={styles.previewImage} />
+          <Image source={{ uri: imageUri }} resizeMode="contain" style={styles.previewImage} />
         ) : (
           <View style={styles.previewEmpty}>
             <MaterialCommunityIcons name="camera-iris" color={colors.cyan} size={36} />
             <Text style={styles.previewTitle}>Precision capture</Text>
-            <Text style={styles.previewCopy}>Upload an image or paste text while Expo Go uses fallback input.</Text>
+            <Text style={styles.previewCopy}>Upload from iPhone Safari. Native live scanner is a native app feature coming soon.</Text>
           </View>
         )}
         <View style={[styles.corner, styles.topLeft]} />
@@ -122,22 +212,40 @@ export default function ScanScreen() {
         <View style={[styles.corner, styles.bottomRight]} />
       </View>
 
+      <View style={styles.statusRow}>
+        <Text style={styles.statusText}>{pipelineState}</Text>
+        {isProcessing && <ActivityIndicator color={colors.cyan} size="small" />}
+      </View>
       <Text style={styles.notice}>{notice}</Text>
+
+      <View style={styles.modeRow}>
+        {(['menu', 'receipt', 'document'] as const).map((item) => (
+          <Pressable key={item} style={[styles.modeButton, mode === item && styles.modeButtonActive]} onPress={() => setMode(item)}>
+            <Text style={[styles.modeText, mode === item && styles.modeTextActive]}>{item}</Text>
+          </Pressable>
+        ))}
+      </View>
 
       <View style={styles.actionRow}>
         <Pressable style={styles.primaryAction} onPress={uploadImage} disabled={isPicking}>
           {isPicking ? <ActivityIndicator color={colors.navy950} /> : <Ionicons name="image-outline" color={colors.navy950} size={18} />}
           <Text style={styles.primaryActionText}>Upload image</Text>
         </Pressable>
-        <Pressable style={styles.secondaryAction} onPress={useExample}>
-          <Text style={styles.secondaryActionText}>Use example</Text>
+        <Pressable style={styles.cameraAction} onPress={enableCamera} disabled={isCapturing}>
+          {isCapturing ? <ActivityIndicator color={colors.text} /> : <Ionicons name="camera-outline" color={colors.text} size={18} />}
+        </Pressable>
+        <Pressable style={styles.secondaryAction} onPress={clearText}>
+          <Text style={styles.secondaryActionText}>Clear text</Text>
         </Pressable>
       </View>
+      <Pressable style={styles.exampleAction} onPress={useExample}>
+        <Text style={styles.exampleText}>Use example</Text>
+      </Pressable>
 
       <GlassCard style={styles.editor}>
         <View style={styles.editorHeader}>
           <Text style={styles.label}>Text input</Text>
-          <Text style={styles.editorMeta}>Auto to English - FX to GBP</Text>
+          <Text style={styles.editorMeta}>Auto to English - EUR to GBP - {mode}</Text>
         </View>
         <TextInput
           value={text}
@@ -156,8 +264,8 @@ export default function ScanScreen() {
             <Text style={styles.metricValue}>{prices.length}</Text>
           </View>
           <View style={styles.metricRight}>
-            <Text style={styles.metricLabel}>Estimate</Text>
-            <Text style={styles.metricValue}>{formatGbp(total)}</Text>
+            <Text style={styles.metricLabel}>{mode === 'receipt' ? 'Estimate' : 'Items'}</Text>
+            <Text style={styles.metricValue}>{mode === 'receipt' ? formatGbp(total) : prices.length}</Text>
           </View>
         </View>
       </GlassCard>
@@ -210,15 +318,15 @@ const styles = StyleSheet.create({
     fontSize: 11,
   },
   preview: {
-    height: 286,
+    height: 232,
     overflow: 'hidden',
-    borderRadius: 24,
+    borderRadius: 20,
     borderWidth: 1,
     borderColor: 'rgba(103,232,249,0.18)',
-    backgroundColor: '#020713',
+    backgroundColor: 'rgba(2, 7, 19, 0.72)',
     shadowColor: colors.cyan,
-    shadowOpacity: 0.22,
-    shadowRadius: 26,
+    shadowOpacity: 0.16,
+    shadowRadius: 18,
   },
   scanGlow: {
     position: 'absolute',
@@ -233,7 +341,7 @@ const styles = StyleSheet.create({
   },
   previewImage: {
     ...StyleSheet.absoluteFillObject,
-    opacity: 0.82,
+    opacity: 0.92,
   },
   previewEmpty: {
     flex: 1,
@@ -290,6 +398,51 @@ const styles = StyleSheet.create({
     fontSize: 12,
     lineHeight: 18,
   },
+  modeRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginTop: 14,
+  },
+  modeButton: {
+    flex: 1,
+    height: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: 'rgba(255,255,255,0.03)',
+  },
+  modeButtonActive: {
+    borderColor: colors.cyanGlow,
+    backgroundColor: 'rgba(103,232,249,0.12)',
+  },
+  modeText: {
+    color: colors.muted,
+    fontSize: 12,
+    fontWeight: '800',
+    textTransform: 'capitalize',
+  },
+  modeTextActive: {
+    color: colors.cyan,
+  },
+  statusRow: {
+    minHeight: 34,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    borderRadius: 17,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: 'rgba(255,255,255,0.03)',
+    marginTop: 14,
+    paddingHorizontal: 14,
+  },
+  statusText: {
+    color: colors.cyan,
+    fontSize: 12,
+    fontWeight: '700',
+  },
   actionRow: {
     flexDirection: 'row',
     gap: 10,
@@ -319,9 +472,30 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.border,
   },
+  cameraAction: {
+    width: 48,
+    height: 48,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 24,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: 'rgba(255,255,255,0.035)',
+  },
   secondaryActionText: {
     color: colors.text,
     fontSize: 14,
+    fontWeight: '700',
+  },
+  exampleAction: {
+    alignSelf: 'flex-start',
+    marginTop: 10,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+  },
+  exampleText: {
+    color: colors.dim,
+    fontSize: 12,
     fontWeight: '700',
   },
   editor: {

@@ -1,15 +1,16 @@
 import { Ionicons } from '@expo/vector-icons';
 import { router, useFocusEffect } from 'expo-router';
 import { useCallback } from 'react';
-import { Image, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Alert, Image, Pressable, StyleSheet, Text, View } from 'react-native';
 import { GlassCard } from '@/components/GlassCard';
 import { Screen } from '@/components/Screen';
-import { formatGbp } from '@/services/conversion';
+import { formatGbp } from '@/services/fx';
 import { colors } from '@/theme/colors';
 import { useScans } from '@/hooks/useScans';
+import { clearScans } from '@/storage/scans';
 
 export default function SavedScreen() {
-  const { scans, refresh } = useScans();
+  const { scans, refresh, removeScan } = useScans();
 
   useFocusEffect(
     useCallback(() => {
@@ -17,11 +18,41 @@ export default function SavedScreen() {
     }, [refresh])
   );
 
+  const handleClearAll = useCallback(() => {
+    Alert.alert('Clear all saved scans?', 'This removes local scan history from this device.', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Clear',
+        style: 'destructive',
+        onPress: async () => {
+          await clearScans();
+          await refresh();
+        },
+      },
+    ]);
+  }, [refresh]);
+
+  const handleDelete = useCallback((id: string) => {
+    Alert.alert('Delete saved scan?', 'This removes this scan from local history.', [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Delete', style: 'destructive', onPress: () => removeScan(id) },
+    ]);
+  }, [removeScan]);
+
   return (
     <Screen>
       <View style={styles.header}>
-        <Text style={styles.title}>Saved</Text>
-        <Text style={styles.copy}>Your translated scans and converted totals stay local to this device.</Text>
+        <View style={styles.headerRow}>
+          <View style={styles.headerCopy}>
+            <Text style={styles.title}>Saved</Text>
+            <Text style={styles.copy}>Your translated scans and converted totals stay local to this device.</Text>
+          </View>
+          {scans.length > 0 && (
+            <Pressable style={styles.clearIcon} onPress={handleClearAll}>
+              <Ionicons name="trash-outline" color={colors.dim} size={18} />
+            </Pressable>
+          )}
+        </View>
       </View>
 
       {scans.length === 0 ? (
@@ -60,7 +91,9 @@ export default function SavedScreen() {
                   </Text>
                   <Text style={styles.savedTotal}>{formatGbp(scan.estimatedTotalGbp)}</Text>
                 </View>
-                <Ionicons name="chevron-forward" color={colors.dim} size={18} />
+                <Pressable style={styles.deleteButton} onPress={() => handleDelete(scan.id)}>
+                  <Ionicons name="trash-outline" color={colors.dim} size={17} />
+                </Pressable>
               </GlassCard>
             </Pressable>
           ))}
@@ -77,8 +110,27 @@ const styles = StyleSheet.create({
   },
   title: {
     color: colors.text,
-    fontSize: 42,
-    fontWeight: '900',
+    fontSize: 38,
+    fontWeight: '700',
+  },
+  headerRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    gap: 16,
+  },
+  headerCopy: {
+    flex: 1,
+    minWidth: 0,
+  },
+  clearIcon: {
+    width: 40,
+    height: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: colors.border,
   },
   copy: {
     marginTop: 12,
@@ -184,5 +236,14 @@ const styles = StyleSheet.create({
     color: colors.cyan,
     fontSize: 14,
     fontWeight: '900',
+  },
+  deleteButton: {
+    width: 36,
+    height: 36,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: colors.border,
   },
 });

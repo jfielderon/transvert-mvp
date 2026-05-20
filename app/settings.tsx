@@ -3,7 +3,7 @@ import { useCallback, useState } from 'react';
 import { Alert, Pressable, StyleSheet, Switch, Text, View } from 'react-native';
 import { GlassCard } from '@/components/GlassCard';
 import { Screen } from '@/components/Screen';
-import { clearScans } from '@/services/scanStorage';
+import { clearScans } from '@/storage/scans';
 import { colors } from '@/theme/colors';
 
 export default function SettingsScreen() {
@@ -68,7 +68,7 @@ export default function SettingsScreen() {
           <Ionicons name="shield-checkmark-outline" color={colors.cyan} size={18} />
           <Text style={styles.privacyTitle}>Privacy</Text>
         </View>
-        <Text style={styles.privacyCopy}>Images use mocked extraction in Expo Go. Saved scans remain local to this device.</Text>
+        <Text style={styles.privacyCopy}>Images use the editable Expo Go OCR fallback. Saved scans remain local to this device.</Text>
       </GlassCard>
 
       <Pressable style={styles.clearButton} onPress={handleClear}>

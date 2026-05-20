@@ -1,11 +1,9 @@
 import { useCallback, useState } from 'react';
 import * as ImagePicker from 'expo-image-picker';
 import { router } from 'expo-router';
-import { createId } from '@/services/ids';
-import { extractTextFromImage } from '@/services/ocrService';
-import { detectPrices, totalGbp } from '@/services/priceParser';
-import { saveScan } from '@/services/scanStorage';
-import type { ScanRecord } from '@/types/scan';
+import { extractTextFromImage } from '@/services/ocr';
+import { processScanInput } from '@/services/scan/processScan';
+import { saveScan } from '@/storage/scans';
 
 type PickSource = 'camera' | 'library';
 
@@ -45,18 +43,12 @@ export function useScanImage() {
 
       const imageUri = result.assets[0].uri;
       const ocr = await extractTextFromImage(imageUri);
-      const prices = detectPrices(ocr.text);
-
-      const scanRecord: ScanRecord = {
-        id: createId('scan'),
-        createdAt: new Date().toISOString(),
+      const scanRecord = await processScanInput({
+        text: ocr.text,
         imageUri,
-        originalText: ocr.text,
-        prices,
-        estimatedTotalGbp: totalGbp(prices),
         source,
         ocrStatus: ocr.status,
-      };
+      });
 
       await saveScan(scanRecord);
       router.push({ pathname: '/results', params: { id: scanRecord.id } });

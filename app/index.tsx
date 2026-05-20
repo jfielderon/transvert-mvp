@@ -31,7 +31,7 @@ export default function HomeScreen() {
         <GlobalBackdrop />
         <View style={styles.heroCopy}>
           <Text style={styles.eyebrow}>GLOBAL PURCHASE INTELLIGENCE</Text>
-          <Text style={styles.title}>SEE IT.{'\n'}SCAN IT.{'\n'}KNOW IT.</Text>
+          <Text style={styles.title}>SEE IT. SCAN IT. KNOW IT.</Text>
           <Text style={styles.subtitle}>Understand what you are buying anywhere in the world.</Text>
         </View>
         <Pressable style={styles.scanButton} onPress={() => router.push('/scan')}>
