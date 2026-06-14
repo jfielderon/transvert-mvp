@@ -28,9 +28,9 @@ export default function RootLayout() {
             left: 14,
             right: 14,
             bottom: 12,
-            height: 78,
-            paddingTop: 7,
-            paddingBottom: 10,
+            height: 72,
+            paddingTop: 8,
+            paddingBottom: 9,
             borderRadius: 28,
             backgroundColor: 'rgba(2, 7, 19, 0.94)',
             borderTopColor: 'rgba(103,232,249,0.08)',
@@ -66,13 +66,13 @@ export default function RootLayout() {
         <Tabs.Screen
           name="scan"
           options={{
-            title: 'Scan',
+            title: '',
             tabBarIcon: ({ focused, color }) => (
               <View style={[styles.scanTab, focused && styles.scanTabActive]}>
-                <MaterialCommunityIcons name="camera-iris" color={focused ? colors.navy950 : color} size={30} />
+                <MaterialCommunityIcons name="camera-iris" color={focused ? colors.navy950 : color} size={28} />
               </View>
             ),
-            tabBarLabelStyle: styles.scanLabel,
+            tabBarLabel: () => null,
           }}
         />
         <Tabs.Screen
@@ -105,28 +105,23 @@ export default function RootLayout() {
 
 const styles = StyleSheet.create({
   scanTab: {
-    width: 62,
-    height: 62,
+    width: 50,
+    height: 50,
     alignItems: 'center',
     justifyContent: 'center',
-    borderRadius: 31,
+    borderRadius: 25,
     borderWidth: 1,
     borderColor: 'rgba(103,232,249,0.38)',
     backgroundColor: 'rgba(103,232,249,0.08)',
-    marginTop: -28,
+    marginTop: 0,
     shadowColor: colors.cyan,
-    shadowOpacity: 0.42,
-    shadowRadius: 20,
+    shadowOpacity: 0.34,
+    shadowRadius: 16,
   },
   scanTabActive: {
     backgroundColor: colors.cyan,
     shadowColor: colors.cyan,
-    shadowOpacity: 0.9,
-    shadowRadius: 26,
-  },
-  scanLabel: {
-    fontSize: 10,
-    fontWeight: '700',
-    marginTop: -3,
+    shadowOpacity: 0.78,
+    shadowRadius: 20,
   },
 });
