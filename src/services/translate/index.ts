@@ -11,18 +11,24 @@ export async function apiTranslate(request: TranslationRequest): Promise<Transla
   const trimmed = request.text.trim();
   if (!trimmed) return { text: '', provider: 'local-fallback', warnings: [] };
 
-  if (env.translationProvider === 'openai' && env.openAiApiKey) {
+  const provider = (env.translationProvider ?? 'google').toLowerCase();
+
+  if ((provider === 'google' || provider === 'openai') && env.googleMapsApiKey) {
     return openAiTranslateProvider.translate({ ...request, text: trimmed });
   }
 
-  if ((env.translationProvider === 'deepl' || env.deeplApiKey) && env.deeplApiKey) {
+  if (provider === 'openai' && env.openAiApiKey) {
+    return openAiTranslateProvider.translate({ ...request, text: trimmed });
+  }
+
+  if ((provider === 'deepl' || env.deeplApiKey) && env.deeplApiKey) {
     return deeplTranslateProvider.translate({ ...request, text: trimmed });
   }
 
   return {
     text: localFallbackTranslate(trimmed),
     provider: 'local-fallback',
-    warnings: ['Using local phrase translation. Add an OpenAI or DeepL key for full translation.'],
+    warnings: ['Using local phrase translation. Add a Google, OpenAI or DeepL key for full translation.'],
   };
 }
 
