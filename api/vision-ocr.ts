@@ -10,7 +10,7 @@ function resolveGoogleApiKey() {
   );
 }
 
-function normaliseBase64(value: unknown) {
+function normaliseImage(value: unknown) {
   if (typeof value !== 'string') return '';
   return value.replace(/^data:image\/[a-zA-Z0-9.+-]+;base64,/, '').trim();
 }
@@ -26,9 +26,9 @@ export default async function handler(req: any, res: any) {
     return res.status(500).json({ error: 'Missing Google API key on server.' });
   }
 
-  const base64 = normaliseBase64(req.body?.base64);
-  if (!base64) {
-    return res.status(400).json({ error: 'Missing image base64.' });
+  const image = normaliseImage(req.body?.image ?? req.body?.base64);
+  if (!image) {
+    return res.status(400).json({ error: 'Missing image.' });
   }
 
   try {
@@ -38,11 +38,9 @@ export default async function handler(req: any, res: any) {
       body: JSON.stringify({
         requests: [
           {
-            image: { content: base64 },
+            image: { content: image },
             features: [{ type: 'DOCUMENT_TEXT_DETECTION', maxResults: 1 }],
-            imageContext: {
-              languageHints: ['en', 'es', 'fr', 'de', 'it', 'pt'],
-            },
+            imageContext: { languageHints: ['en', 'es', 'fr', 'de', 'it', 'pt'] },
           },
         ],
       }),
@@ -59,7 +57,6 @@ export default async function handler(req: any, res: any) {
     }
 
     const text = first?.fullTextAnnotation?.text ?? first?.textAnnotations?.[0]?.description ?? '';
-
     return res.status(200).json({
       text: String(text).trim(),
       provider: 'google-vision',
