@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
-import { useState } from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, Text, TextInput, useWindowDimensions, View } from 'react-native';
+import { useEffect, useState } from 'react';
+import { ActivityIndicator, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { GlassCard } from '@/components/GlassCard';
 import { Screen } from '@/components/Screen';
 import { translateText } from '@/services/translate';
@@ -15,27 +15,61 @@ function nextValue<T extends readonly string[]>(items: T, current: T[number]): T
 }
 
 export default function TranslateScreen() {
-  const { width } = useWindowDimensions();
   const [sourceLanguage, setSourceLanguage] = useState<(typeof languages)[number]>('Auto');
   const [targetLanguage, setTargetLanguage] = useState<(typeof targetLanguages)[number]>('English');
   const [text, setText] = useState('');
   const [translated, setTranslated] = useState('');
   const [provider, setProvider] = useState('ready');
   const [isTranslating, setIsTranslating] = useState(false);
-  const isWide = width >= 720;
+  const [error, setError] = useState<string | null>(null);
 
-  const handleTranslate = async () => {
-    if (!text.trim()) return;
+  useEffect(() => {
+    if (!text.trim()) {
+      setTranslated('');
+      setProvider('ready');
+      setError(null);
+      setIsTranslating(false);
+      return undefined;
+    }
+
+    let active = true;
+    const timer = setTimeout(async () => {
     setIsTranslating(true);
-    const result = await translateText({
-      text,
-      sourceLanguage: sourceLanguage === 'Auto' ? undefined : sourceLanguage,
-      targetLanguage,
-    });
-    setTranslated(result.text);
-    setProvider(result.provider);
-    setIsTranslating(false);
-  };
+      setError(null);
+
+      try {
+        const result = await translateText({
+          text,
+          sourceLanguage: sourceLanguage === 'Auto' ? undefined : sourceLanguage,
+          targetLanguage,
+        });
+
+        if (!active) return;
+
+        if (result.provider === 'local-fallback') {
+          setTranslated('');
+          setProvider('translation unavailable');
+          setError(result.warnings[0] ?? 'Translation API unavailable. Add an OpenAI or DeepL key for real translation.');
+          return;
+        }
+
+        setTranslated(result.text);
+        setProvider(result.provider);
+      } catch (translationError) {
+        if (!active) return;
+        setTranslated('');
+        setProvider('error');
+        setError(translationError instanceof Error ? translationError.message : 'Translation failed. Check your translation API settings.');
+      } finally {
+        if (active) setIsTranslating(false);
+      }
+    }, 450);
+
+    return () => {
+      active = false;
+      clearTimeout(timer);
+    };
+  }, [sourceLanguage, targetLanguage, text]);
 
   return (
     <Screen>
@@ -64,32 +98,25 @@ export default function TranslateScreen() {
           onChangeText={(value) => {
             setText(value);
             setTranslated('');
+            setError(null);
           }}
           multiline
           placeholder="Type or paste text to translate."
           placeholderTextColor={colors.dim}
           style={styles.input}
         />
-      </GlassCard>
-
-      <Pressable style={styles.translateButton} onPress={handleTranslate} disabled={isTranslating || !text.trim()}>
-        {isTranslating ? <ActivityIndicator color={colors.navy950} /> : <Ionicons name="language-outline" color={colors.navy950} size={18} />}
-        <Text style={styles.translateText}>Translate</Text>
-      </Pressable>
-
-      <View style={[styles.resultsGrid, isWide && styles.resultsGridWide]}>
-        <GlassCard style={[styles.result, isWide && styles.resultWide]}>
-          <Text style={styles.label}>Original</Text>
-          <Text style={styles.resultText}>{text || 'Original text will appear here.'}</Text>
-        </GlassCard>
-        <GlassCard style={[styles.result, styles.translatedCard, isWide && styles.resultWide]}>
+        <View style={styles.inlineResult}>
           <View style={styles.resultHeader}>
             <Text style={[styles.label, styles.cyanLabel]}>Translated</Text>
-            <Text style={styles.provider}>{provider}</Text>
+            <View style={styles.providerRow}>
+              {isTranslating && <ActivityIndicator color={colors.cyan} size="small" />}
+              <Text style={styles.provider}>{provider}</Text>
+            </View>
           </View>
-          <Text style={styles.resultText}>{translated || 'Translation will appear here.'}</Text>
-        </GlassCard>
-      </View>
+          <Text style={styles.resultText}>{translated || (error ? 'Translation unavailable.' : 'Start typing to translate automatically.')}</Text>
+          {error && <Text style={styles.errorText}>{error}</Text>}
+        </View>
+      </GlassCard>
     </Screen>
   );
 }
@@ -155,36 +182,11 @@ const styles = StyleSheet.create({
     lineHeight: 25,
     textAlignVertical: 'top',
   },
-  translateButton: {
-    height: 52,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 9,
-    borderRadius: 26,
-    backgroundColor: colors.cyan,
+  inlineResult: {
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
     marginTop: 16,
-  },
-  translateText: {
-    color: colors.navy950,
-    fontSize: 16,
-    fontWeight: '800',
-  },
-  resultsGrid: {
-    gap: 12,
-    marginTop: 16,
-  },
-  resultsGridWide: {
-    flexDirection: 'row',
-  },
-  result: {
-    minHeight: 180,
-  },
-  resultWide: {
-    flex: 1,
-  },
-  translatedCard: {
-    borderColor: colors.cyanGlow,
+    paddingTop: 16,
   },
   resultHeader: {
     flexDirection: 'row',
@@ -206,10 +208,21 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '700',
   },
+  providerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
   resultText: {
     marginTop: 14,
     color: colors.text,
     fontSize: 16,
     lineHeight: 25,
+  },
+  errorText: {
+    marginTop: 10,
+    color: colors.danger,
+    fontSize: 13,
+    lineHeight: 19,
   },
 });

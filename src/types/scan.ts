@@ -9,6 +9,9 @@ export type DetectedPrice = {
   currency: CurrencyCode;
   convertedGbp?: number;
   context?: string;
+  itemText?: string;
+  translatedItemText?: string;
+  section?: string;
   role?: 'line-item' | 'total' | 'fee' | 'unknown';
   confidence?: 'detected' | 'interpreted-menu-pricing';
   note?: string;

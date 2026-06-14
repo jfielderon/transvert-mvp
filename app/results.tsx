@@ -15,6 +15,7 @@ export default function ResultsScreen() {
   const { width } = useWindowDimensions();
   const { scans, isLoading, refresh } = useScans();
   const [savedMessage, setSavedMessage] = useState(false);
+  const [showRawOcr, setShowRawOcr] = useState(false);
   const scan = useMemo(() => scans.find((item) => item.id === id), [id, scans]);
   const isWide = width >= 760;
 
@@ -47,15 +48,18 @@ export default function ResultsScreen() {
   const handleShare = async () => {
     const date = new Date(scan.createdAt).toLocaleString();
     const prices = scan.prices.length
-      ? scan.prices.map((price) => `${price.context || 'Detected item'} | ${formatCurrency(price.amount, price.currency)} | GBP estimate ${formatGbp(price.convertedGbp ?? 0)}`).join('\n')
+      ? scan.prices.map((price) => {
+        const section = price.section ? `${price.section} - ` : '';
+        return `${section}${price.itemText || price.context || 'Detected item'} -> ${price.translatedItemText || 'Translation unavailable'} | ${formatCurrency(price.amount, price.currency)} | ${formatGbp(price.convertedGbp ?? 0)} GBP`;
+      }).join('\n')
       : 'No prices detected.';
     const message = [
       'Transvert scan',
       `Date/time: ${date}`,
       scan.imageUri ? `Original image: ${scan.imageUri}` : undefined,
       '',
-      'Translated text:',
-      translatedText || 'No translation available.',
+      translatedText ? 'Translated text:' : undefined,
+      translatedText || undefined,
       '',
       'Detected prices:',
       prices,
@@ -105,34 +109,30 @@ export default function ResultsScreen() {
         {shouldShowTotal && <Text style={styles.total}>{formatGbp(scan.estimatedTotalGbp)}</Text>}
       </View>
 
-      <View style={[styles.textGrid, isWide && styles.textGridWide]}>
-        <GlassCard style={[styles.card, isWide && styles.textCardWide]}>
-          <Text style={styles.label}>OCR original text</Text>
-          <Text style={styles.body}>{scan.originalText}</Text>
-        </GlassCard>
-
-        <GlassCard style={[styles.card, styles.translatedCard, isWide && styles.textCardWide]}>
-          <Text style={[styles.label, styles.cyanLabel]}>Translated English</Text>
-          <Text style={styles.body}>{translatedText || 'No translation available.'}</Text>
-        </GlassCard>
-      </View>
-
       <GlassCard style={styles.card}>
         <View style={styles.priceHeader}>
           <Text style={styles.label}>Detected items</Text>
-          <Text style={styles.rate}>GBP estimate</Text>
+          <Text style={styles.rate}>Item | English | EUR | GBP estimate</Text>
         </View>
         {scan.prices.length === 0 ? (
           <Text style={styles.empty}>No prices detected in the entered text.</Text>
         ) : (
-          scan.prices.map((price) => (
-            <View key={price.id} style={styles.priceRow}>
-              <View style={styles.itemCell}>
-                <Text style={styles.itemName} numberOfLines={2}>{price.context || 'Detected item'}</Text>
-                {price.note && <Text style={styles.note}>{price.note}</Text>}
+          scan.prices.map((price, index) => (
+            <View key={price.id}>
+              {price.section && (index === 0 || scan.prices[index - 1]?.section !== price.section) && (
+                <Text style={styles.sectionLabel}>{price.section}</Text>
+              )}
+              <View style={styles.priceRow}>
+                <View style={styles.itemCell}>
+                  <Text style={styles.itemName} numberOfLines={2}>{price.itemText || price.context || 'Detected item'}</Text>
+                  {price.note && <Text style={styles.note}>{price.note}</Text>}
+                </View>
+                <View style={styles.translationCell}>
+                  <Text style={styles.translationText} numberOfLines={2}>{price.translatedItemText || 'Translation unavailable'}</Text>
+                </View>
+                <Text style={styles.priceOriginal}>{formatCurrency(price.amount, price.currency)}</Text>
+                <Text style={styles.priceConverted}>{formatGbp(price.convertedGbp ?? 0)}</Text>
               </View>
-              <Text style={styles.priceOriginal}>{formatCurrency(price.amount, price.currency)}</Text>
-              <Text style={styles.priceConverted}>{formatGbp(price.convertedGbp ?? 0)}</Text>
             </View>
           ))
         )}
@@ -140,6 +140,25 @@ export default function ResultsScreen() {
           <View style={styles.totalRow}>
             <Text style={styles.totalLabel}>Total estimate</Text>
             <Text style={styles.totalValue}>{formatGbp(scan.estimatedTotalGbp)}</Text>
+          </View>
+        )}
+      </GlassCard>
+
+      <GlassCard style={styles.card}>
+        <Pressable style={styles.rawHeader} onPress={() => setShowRawOcr((value) => !value)}>
+          <Text style={styles.label}>View raw OCR</Text>
+          <Ionicons name={showRawOcr ? 'chevron-up' : 'chevron-down'} color={colors.dim} size={18} />
+        </Pressable>
+        {showRawOcr && (
+          <View style={[styles.textGrid, isWide && styles.textGridWide]}>
+            <View style={isWide && styles.textCardWide}>
+              <Text style={styles.rawSubhead}>Original OCR</Text>
+              <Text style={styles.body}>{scan.originalText}</Text>
+            </View>
+            <View style={isWide && styles.textCardWide}>
+              <Text style={styles.rawSubhead}>Full English translation</Text>
+              <Text style={styles.body}>{translatedText || 'Translation unavailable.'}</Text>
+            </View>
           </View>
         )}
       </GlassCard>
@@ -282,7 +301,19 @@ const styles = StyleSheet.create({
     borderBottomColor: colors.border,
     paddingVertical: 14,
   },
+  sectionLabel: {
+    marginTop: 16,
+    color: colors.cyan,
+    fontSize: 11,
+    fontWeight: '900',
+    letterSpacing: 1.8,
+    textTransform: 'uppercase',
+  },
   itemCell: {
+    flex: 1,
+    minWidth: 0,
+  },
+  translationCell: {
     flex: 1,
     minWidth: 0,
   },
@@ -295,6 +326,11 @@ const styles = StyleSheet.create({
     marginTop: 4,
     color: colors.cyan,
     fontSize: 11,
+  },
+  translationText: {
+    color: colors.muted,
+    fontSize: 13,
+    lineHeight: 18,
   },
   priceOriginal: {
     width: 78,
@@ -329,6 +365,19 @@ const styles = StyleSheet.create({
     color: colors.dim,
     fontSize: 12,
     lineHeight: 18,
+  },
+  rawHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  rawSubhead: {
+    marginTop: 14,
+    color: colors.cyan,
+    fontSize: 10,
+    fontWeight: '900',
+    letterSpacing: 1.8,
+    textTransform: 'uppercase',
   },
   savedBanner: {
     marginTop: 14,

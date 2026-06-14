@@ -35,6 +35,29 @@ function contextFor(text: string, start: number, end: number) {
   return text.slice(lineStart, lineEnd).replace(/\s+/g, ' ').trim();
 }
 
+function itemTextFor(context: string, rawPrice: string) {
+  return context
+    .replace(rawPrice, ' ')
+    .replace(/\b(EUR|GBP|USD)\b/gi, ' ')
+    .replace(/[€£$]/g, ' ')
+    .replace(/\s{2,}/g, ' ')
+    .replace(/\s+[-–—:]\s*$/, '')
+    .trim();
+}
+
+function sectionFor(text: string, start: number) {
+  const before = text.slice(0, start).split('\n').map((line) => line.trim()).filter(Boolean);
+  for (let index = before.length - 1; index >= 0; index -= 1) {
+    const line = before[index];
+    if (/[€£$]|\b(EUR|GBP|USD)\b/i.test(line)) continue;
+    if (line.length > 42) continue;
+    if (/^[A-Z0-9 À-ÿ'&-]+$/.test(line) || /\b(menu|tapas|starters|mains|desserts|drinks|bebidas|postres|entrantes)\b/i.test(line)) {
+      return line;
+    }
+  }
+  return undefined;
+}
+
 function textLooksLikeMenu(text: string) {
   return /\b(menu|tapas|raciones|bocadillo|paella|ensalada|gazpacho|queso|vino|cerveza|cafe|pizza|pasta|starter|main|dessert|plato|bebida)\b/i.test(text);
 }
@@ -76,6 +99,7 @@ function addMatch(
 
   const currency = currencyFromToken(currencyToken);
   const context = contextFor(text, start, end);
+  const itemText = itemTextFor(context, match[0].trim());
   const interpretedAsMenuPricing = shouldInterpretAsMenuCents(amountRaw, originalAmount, currency, context, text, mode);
   const amount = interpretedAsMenuPricing ? originalAmount / 100 : originalAmount;
 
@@ -87,6 +111,8 @@ function addMatch(
     currency,
     convertedGbp: rates ? convertWithRates(amount, currency, rates) : convertToGbp(amount, currency),
     context,
+    itemText: itemText || context,
+    section: sectionFor(text, start),
     role: roleForContext(context),
     confidence: interpretedAsMenuPricing ? 'interpreted-menu-pricing' : 'detected',
     note: interpretedAsMenuPricing ? 'Interpreted as menu pricing' : undefined,
@@ -129,7 +155,15 @@ export function detectPricesWithRates(text: string, rates?: FxRates, mode: ScanM
     codeMatch = CODE_PATTERN.exec(text);
   }
 
-  return prices.sort((a, b) => text.indexOf(a.raw) - text.indexOf(b.raw));
+  const seen = new Set<string>();
+  return prices
+    .filter((price) => {
+      const key = `${price.section ?? ''}|${price.itemText ?? price.context ?? ''}|${price.amount}|${price.currency}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
+    .sort((a, b) => text.indexOf(a.raw) - text.indexOf(b.raw));
 }
 
 export function totalGbp(prices: DetectedPrice[]) {

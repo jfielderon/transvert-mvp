@@ -50,7 +50,7 @@ export default function ConvertScreen() {
     <Screen>
       <View style={styles.header}>
         <Text style={styles.eyebrow}>CONVERT</Text>
-        <Text style={styles.title}>No more roughly, just know more.</Text>
+        <Text style={styles.title}>Know your price.</Text>
       </View>
 
       <GlassCard style={styles.panel}>

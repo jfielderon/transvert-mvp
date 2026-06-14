@@ -2,7 +2,7 @@ import { Ionicons } from '@expo/vector-icons';
 import * as Location from 'expo-location';
 import { router } from 'expo-router';
 import { useEffect, useState } from 'react';
-import { ActivityIndicator, Image, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Image, Linking, Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { GlassCard } from '@/components/GlassCard';
 import { Screen } from '@/components/Screen';
 import { env } from '@/config/env';
@@ -10,6 +10,16 @@ import { findNearbyAtms, formatDistance, type AtmLocation } from '@/services/atm
 import { colors } from '@/theme/colors';
 
 type AtmState = 'idle' | 'permission' | 'loading' | 'manual' | 'ready' | 'error';
+type Coords = { latitude: number; longitude: number };
+
+function withTimeout<T>(promise: Promise<T>, message: string, ms = 10000) {
+  return Promise.race([
+    promise,
+    new Promise<T>((_, reject) => {
+      setTimeout(() => reject(new Error(message)), ms);
+    }),
+  ]);
+}
 
 export default function AtmScreen() {
   const [atms, setAtms] = useState<AtmLocation[]>([]);
@@ -18,11 +28,13 @@ export default function AtmScreen() {
   const [manualLocation, setManualLocation] = useState('');
   const [warning, setWarning] = useState('Fee data estimate / community data coming soon.');
   const [mapImageUrl, setMapImageUrl] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   const applyAtmResult = (result: Awaited<ReturnType<typeof findNearbyAtms>>) => {
     setAtms(result.atms);
     setProvider(result.provider);
     setWarning(result.warnings[0] ?? 'Fee data estimate / community data coming soon.');
+    setError(result.error ?? null);
     setStatus('ready');
 
     if (!env.googleMapsApiKey || !result.center) {
@@ -38,27 +50,48 @@ export default function AtmScreen() {
     setMapImageUrl(`https://maps.googleapis.com/maps/api/staticmap?center=${result.center.latitude},${result.center.longitude}&zoom=15&size=640x360&scale=2&maptype=roadmap&style=feature:all|element:labels.text.fill|color:0xffffff&style=feature:all|element:geometry|color:0x08111f&style=feature:road|element:geometry|color:0x1c3557&${markers}&key=${env.googleMapsApiKey}`);
   };
 
+  const getBrowserLocation = () => new Promise<Coords>((resolve, reject) => {
+    if (typeof navigator === 'undefined' || !navigator.geolocation) {
+      reject(new Error('Browser geolocation is unavailable.'));
+      return;
+    }
+
+    navigator.geolocation.getCurrentPosition(
+      (position) => resolve({
+        latitude: position.coords.latitude,
+        longitude: position.coords.longitude,
+      }),
+      (geoError) => reject(new Error(geoError.message || 'Location permission was denied.')),
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 }
+    );
+  });
+
+  const getDeviceLocation = async () => {
+    if (Platform.OS === 'web') return getBrowserLocation();
+
+    const permission = await Location.requestForegroundPermissionsAsync();
+    if (!permission.granted) throw new Error('Location denied. Enter a location manually.');
+
+    const position = await Location.getCurrentPositionAsync({});
+    return {
+      latitude: position.coords.latitude,
+      longitude: position.coords.longitude,
+    };
+  };
+
   const loadFromDeviceLocation = async () => {
     setStatus('loading');
     setWarning('Finding nearby ATMs...');
+    setError(null);
 
     try {
-      const permission = await Location.requestForegroundPermissionsAsync();
-      if (!permission.granted) {
-        setStatus('manual');
-        setWarning('Location denied. Enter a location manually.');
-        return;
-      }
-
-      const position = await Location.getCurrentPositionAsync({});
-      const result = await findNearbyAtms({
-        latitude: position.coords.latitude,
-        longitude: position.coords.longitude,
-      });
+      const coords = await withTimeout(getDeviceLocation(), 'Location request timed out. Enter a location manually.');
+      const result = await withTimeout(findNearbyAtms(coords), 'ATM search timed out. Try manual search.');
       applyAtmResult(result);
-    } catch {
+    } catch (locationError) {
       setStatus('manual');
-      setWarning('Could not get location. Enter a location manually.');
+      setError(locationError instanceof Error ? locationError.message : 'Could not get location.');
+      setWarning('Enter a location manually or try location again.');
     }
   };
 
@@ -66,8 +99,16 @@ export default function AtmScreen() {
     if (!manualLocation.trim()) return;
     setStatus('loading');
     setWarning('Finding nearby ATMs...');
-    const result = await findNearbyAtms({ query: manualLocation.trim() });
-    applyAtmResult(result);
+    setError(null);
+
+    try {
+      const result = await withTimeout(findNearbyAtms({ query: manualLocation.trim() }), 'Manual ATM search timed out. Try a more specific location.');
+      applyAtmResult(result);
+    } catch (searchError) {
+      setStatus('error');
+      setError(searchError instanceof Error ? searchError.message : 'Could not search that location.');
+      setWarning('Try a more specific city, area, or postcode.');
+    }
   };
 
   useEffect(() => {
@@ -139,6 +180,8 @@ export default function AtmScreen() {
         </View>
       </GlassCard>
 
+      {error && <Text style={styles.errorText}>{error}</Text>}
+
       {status === 'manual' && (
         <Pressable style={styles.allowButton} onPress={loadFromDeviceLocation}>
           <Ionicons name="location-outline" color={colors.navy950} size={18} />
@@ -159,8 +202,11 @@ export default function AtmScreen() {
             </View>
             <View style={styles.atmFooter}>
               <Text style={styles.risk}>{atm.riskLabel}</Text>
-              <Text style={styles.cardCompat}>{atm.feeDataStatus === 'community-coming-soon' ? 'Community data coming soon' : 'Fee data estimate'}</Text>
+              <Pressable onPress={() => Linking.openURL(atm.mapsUrl ?? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(atm.name)}`)}>
+                <Text style={styles.cardCompat}>Open in Maps</Text>
+              </Pressable>
             </View>
+            <Text style={styles.feeData}>{atm.feeDataStatus === 'community-coming-soon' ? 'Community fee data coming soon' : 'Fee data estimate'}</Text>
           </GlassCard>
         ))}
       </View>
@@ -348,6 +394,13 @@ const styles = StyleSheet.create({
     color: colors.navy950,
     fontWeight: '900',
   },
+  errorText: {
+    marginTop: 12,
+    color: colors.danger,
+    fontSize: 13,
+    fontWeight: '700',
+    lineHeight: 19,
+  },
   sectionTitle: {
     marginTop: 24,
     color: colors.text,
@@ -401,8 +454,14 @@ const styles = StyleSheet.create({
     fontSize: 12,
   },
   cardCompat: {
-    color: colors.dim,
+    color: colors.cyan,
     fontSize: 12,
+    fontWeight: '800',
     textAlign: 'right',
+  },
+  feeData: {
+    marginTop: 10,
+    color: colors.dim,
+    fontSize: 11,
   },
 });
