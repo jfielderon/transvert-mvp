@@ -69,7 +69,7 @@ export default function RootLayout() {
             title: '',
             tabBarIcon: ({ focused, color }) => (
               <View style={[styles.scanTab, focused && styles.scanTabActive]}>
-                <MaterialCommunityIcons name="camera-iris" color={focused ? colors.navy950 : color} size={28} />
+                <MaterialCommunityIcons name="camera-iris" color={focused ? colors.navy950 : color} size={29} />
               </View>
             ),
             tabBarLabel: () => null,
@@ -105,23 +105,23 @@ export default function RootLayout() {
 
 const styles = StyleSheet.create({
   scanTab: {
-    width: 50,
-    height: 50,
+    width: 48,
+    height: 48,
     alignItems: 'center',
     justifyContent: 'center',
-    borderRadius: 25,
+    borderRadius: 24,
     borderWidth: 1,
-    borderColor: 'rgba(103,232,249,0.38)',
-    backgroundColor: 'rgba(103,232,249,0.08)',
-    marginTop: 0,
+    borderColor: 'rgba(103,232,249,0.34)',
+    backgroundColor: 'rgba(103,232,249,0.07)',
+    marginTop: 10,
     shadowColor: colors.cyan,
-    shadowOpacity: 0.34,
-    shadowRadius: 16,
+    shadowOpacity: 0.22,
+    shadowRadius: 12,
   },
   scanTabActive: {
     backgroundColor: colors.cyan,
     shadowColor: colors.cyan,
-    shadowOpacity: 0.78,
-    shadowRadius: 20,
+    shadowOpacity: 0.56,
+    shadowRadius: 14,
   },
 });
