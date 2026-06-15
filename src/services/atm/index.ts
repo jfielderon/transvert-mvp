@@ -64,7 +64,7 @@ function localFallback(error?: string): AtmSearchResult {
     provider: 'local-fallback',
     center: fallbackCenter,
     atms: withLocalCoordinates(fallbackCenter.latitude, fallbackCenter.longitude),
-    warnings: ['ATM search proxy is unavailable. Showing estimate fallback.'],
+    warnings: ['ATM search is in fallback mode. Add a Google Maps/Places server key to return live nearby ATMs.'],
     error,
   };
 }
@@ -87,7 +87,7 @@ export async function findNearbyAtms(input: AtmSearchInput = {}): Promise<AtmSea
     if (!response.ok) {
       return {
         ...payload,
-        atms: payload.atms.length > 0 ? payload.atms : [],
+        atms: payload.atms.length > 0 ? payload.atms : localFallback().atms,
         error: payload.error ?? `ATM search failed with HTTP ${response.status}.`,
       };
     }
