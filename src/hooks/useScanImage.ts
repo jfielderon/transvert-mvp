@@ -3,6 +3,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { router } from 'expo-router';
 import { extractTextFromImage } from '@/services/ocr';
 import { processScanInput } from '@/services/scan/processScan';
+import { uploadOcrImageToSupabase } from '@/services/supabase/storage';
 import { saveScan } from '@/storage/scans';
 
 type PickSource = 'camera' | 'library';
@@ -29,23 +30,36 @@ export function useScanImage() {
         source === 'camera'
           ? await ImagePicker.launchCameraAsync({
               allowsEditing: false,
-              quality: 1,
+              base64: true,
+              quality: 0.65,
             })
           : await ImagePicker.launchImageLibraryAsync({
               mediaTypes: ImagePicker.MediaTypeOptions.Images,
               allowsEditing: false,
-              quality: 1,
+              base64: true,
+              quality: 0.65,
             });
 
       if (result.canceled || !result.assets[0]?.uri) {
         return;
       }
 
-      const imageUri = result.assets[0].uri;
-      const ocr = await extractTextFromImage(imageUri);
+      const asset = result.assets[0];
+      const imageUri = asset.uri;
+      const upload = await uploadOcrImageToSupabase({
+        uri: imageUri,
+        base64: asset.base64 ?? undefined,
+        mimeType: asset.mimeType ?? undefined,
+      });
+      const ocr = await extractTextFromImage({
+        uri: imageUri,
+        imageUrl: upload.input.imageUrl,
+        base64: upload.input.imageUrl ? undefined : asset.base64 ?? undefined,
+        mimeType: asset.mimeType ?? undefined,
+      });
       const scanRecord = await processScanInput({
         text: ocr.text,
-        imageUri,
+        imageUri: upload.input.imageUrl ?? imageUri,
         source,
         ocrStatus: ocr.status,
       });

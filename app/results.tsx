@@ -115,7 +115,11 @@ export default function ResultsScreen() {
           <Text style={styles.rate}>Item | English | EUR | GBP estimate</Text>
         </View>
         {scan.prices.length === 0 ? (
-          <Text style={styles.empty}>No prices detected in the entered text.</Text>
+          <View>
+            <Text style={styles.empty}>No prices detected in the extracted text.</Text>
+            <Text style={styles.rawSubhead}>Extracted OCR text</Text>
+            <Text style={styles.body}>{scan.originalText}</Text>
+          </View>
         ) : (
           scan.prices.map((price, index) => (
             <View key={price.id}>

@@ -17,4 +17,5 @@ export const env = {
   atmProvider: process.env.EXPO_PUBLIC_ATM_PROVIDER ?? 'local',
   supabaseUrl: process.env.EXPO_PUBLIC_SUPABASE_URL,
   supabaseAnonKey: process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY,
+  supabaseOcrBucket: process.env.EXPO_PUBLIC_SUPABASE_OCR_BUCKET ?? 'scan-images',
 };

@@ -8,7 +8,7 @@ export type FxSnapshot = {
   base: CurrencyCode;
   rates: FxRates;
   fetchedAt: number;
-  provider: 'exchangerate-api' | 'open-er-api' | 'wise-ready' | 'local-fallback';
+  provider: 'exchangerate-api' | 'open-er-api' | 'frankfurter' | 'wise-ready' | 'local-fallback';
   status: FxStatus;
 };
 

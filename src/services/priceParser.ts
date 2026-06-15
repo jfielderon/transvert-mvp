@@ -214,7 +214,7 @@ export function detectPricesWithRates(text: string, rates?: FxRates, mode: ScanM
       seen.add(key);
       return true;
     })
-    .sort((a, b) => text.indexOf(a.context) - text.indexOf(b.context));
+    .sort((a, b) => text.indexOf(a.context ?? '') - text.indexOf(b.context ?? ''));
 }
 
 export function totalGbp(prices: DetectedPrice[]) {

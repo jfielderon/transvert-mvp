@@ -11,6 +11,7 @@ export type OcrInput = {
   uri: string;
   base64?: string;
   mimeType?: string;
+  imageUrl?: string;
 };
 
 export type OcrProvider = {

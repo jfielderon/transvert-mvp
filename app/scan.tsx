@@ -10,6 +10,7 @@ import type { FxRates } from '@/services/fx/types';
 import { SAMPLE_INPUT_PLACEHOLDER, prepareImageForManualText } from '@/services/ocr';
 import { detectPricesWithRates, totalGbp } from '@/services/priceParser';
 import { processScanInput } from '@/services/scan/processScan';
+import { uploadOcrImageToSupabase } from '@/services/supabase/storage';
 import { translateMenuText } from '@/services/translate';
 import { saveScan } from '@/storage/scans';
 import { colors } from '@/theme/colors';
@@ -18,6 +19,7 @@ type SelectedImage = {
   uri: string;
   base64?: string;
   mimeType?: string;
+  imageUrl?: string;
 };
 
 type PipelineSource = 'camera' | 'library' | 'manual';
@@ -53,16 +55,38 @@ export default function ScanScreen() {
 
         let workingText = manualText?.trim() ?? '';
         let workingOcrStatus: 'success' | 'fallback' | 'failed' = source === 'manual' ? 'fallback' : ocrStatus;
+        let savedImageUri = image?.uri ?? imageUri ?? undefined;
 
         if (image) {
-          const ocr = await prepareImageForManualText(image);
+          setPipelineState('Uploading image');
+          const upload = await uploadOcrImageToSupabase(image);
+          const ocrInput = {
+            uri: image.uri,
+            imageUrl: upload.input.imageUrl,
+            base64: upload.input.imageUrl ? undefined : image.base64,
+            mimeType: image.mimeType,
+          };
+          savedImageUri = upload.input.imageUrl ?? image.uri;
+          if (upload.warnings[0]) setNotice(upload.warnings[0]);
+
+          setPipelineState('Reading image');
+          const ocr = await prepareImageForManualText(ocrInput);
           workingText = ocr.text.trim();
           workingOcrStatus = ocr.status;
           setText(workingText);
           setOcrStatus(ocr.status);
           setNotice(ocr.warnings[0] ?? (workingText ? 'Text found. Preparing result...' : 'No readable text found.'));
 
-          if (ocr.status === 'failed') {
+          console.log('[scan] OCR result before process', {
+            provider: ocr.provider,
+            status: ocr.status,
+            textLength: ocr.text.length,
+            trimmedTextLength: workingText.length,
+            warnings: ocr.warnings,
+            usedImageUrl: Boolean(upload.input.imageUrl),
+          });
+
+          if (ocr.status === 'failed' && !workingText) {
             throw new Error(ocr.warnings[0] ?? 'OCR failed. Try a clearer, closer image.');
           }
         }
@@ -74,7 +98,7 @@ export default function ScanScreen() {
         setPipelineState('Translating');
         const scanRecord = await processScanInput({
           text: workingText,
-          imageUri: image?.uri ?? imageUri ?? undefined,
+          imageUri: savedImageUri,
           source,
           ocrStatus: workingOcrStatus,
           mode: 'menu',
@@ -241,7 +265,7 @@ export default function ScanScreen() {
             setPipelineState(value.trim() ? 'Ready to process text' : 'Ready');
           }}
           multiline
-          placeholder={SAMPLE_INPUT_PLACEHOLDER}
+          placeholder="Extracted OCR text will appear here. You can also paste text manually."
           placeholderTextColor={colors.dim}
           style={styles.input}
         />

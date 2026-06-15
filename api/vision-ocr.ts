@@ -1,6 +1,10 @@
 const GOOGLE_VISION_ENDPOINT = 'https://vision.googleapis.com/v1/images:annotate';
 const OPENAI_RESPONSES_ENDPOINT = 'https://api.openai.com/v1/responses';
 
+declare const Buffer: {
+  from(input: ArrayBuffer): { toString(encoding: string): string };
+};
+
 function resolveGoogleApiKey() {
   return (
     process.env.GOOGLE_VISION_API_KEY ??
@@ -21,6 +25,10 @@ function normaliseImage(value: unknown) {
 
 function asDataUrl(base64: string) {
   return base64.startsWith('data:image/') ? base64 : `data:image/jpeg;base64,${base64}`;
+}
+
+function firstChars(value: string, length = 300) {
+  return value.slice(0, length);
 }
 
 function json(res: any, status: number, body: Record<string, unknown>) {
@@ -45,12 +53,20 @@ async function extractWithGoogleVision(image: string, apiKey: string) {
   const payload = await response.json();
   const first = payload?.responses?.[0];
   const providerError = first?.error?.message;
+  const text = String(first?.fullTextAnnotation?.text ?? first?.textAnnotations?.[0]?.description ?? '').trim();
+
+  console.log('[api:vision-ocr] raw Vision response', JSON.stringify(payload));
+  console.log('[api:vision-ocr] fullTextAnnotation', JSON.stringify(first?.fullTextAnnotation ?? null));
+  console.log('[api:vision-ocr] textAnnotations[0]', JSON.stringify(first?.textAnnotations?.[0] ?? null));
+  console.log('[api:vision-ocr] OCR provider used', 'google-vision');
+  console.log('[api:vision-ocr] extracted text length', text.length);
+  console.log('[api:vision-ocr] first 300 chars of extracted OCR text', firstChars(text));
 
   if (!response.ok || providerError) {
     throw new Error(providerError ?? payload?.error?.message ?? 'Google Vision request failed.');
   }
 
-  return String(first?.fullTextAnnotation?.text ?? first?.textAnnotations?.[0]?.description ?? '').trim();
+  return text;
 }
 
 async function extractWithOpenAiVision(image: string, apiKey: string) {
@@ -94,7 +110,48 @@ export default async function handler(req: any, res: any) {
     return json(res, 405, { error: 'Method not allowed' });
   }
 
-  const image = normaliseImage(req.body?.image ?? req.body?.base64);
+  const imageUrl = typeof req.body?.imageUrl === 'string' ? req.body.imageUrl.trim() : '';
+  let image = normaliseImage(req.body?.image ?? req.body?.base64);
+
+  console.log('[api:vision-ocr] request payload', {
+    hasImageUrl: Boolean(imageUrl),
+    imageUrl: imageUrl || undefined,
+    hasBase64: Boolean(image),
+    base64Length: image.length,
+    mimeType: req.body?.mimeType,
+  });
+
+  if (imageUrl) {
+    try {
+      const imageResponse = await fetch(imageUrl);
+      const imageBytes = await imageResponse.arrayBuffer();
+      const imageByteSize = imageBytes.byteLength;
+      const imageContentType = imageResponse.headers.get('content-type');
+
+      console.log('[api:vision-ocr] image fetch', {
+        imageUrl,
+        status: imageResponse.status,
+        contentType: imageContentType,
+        byteSize: imageByteSize,
+      });
+
+      if (!imageResponse.ok || imageByteSize === 0) {
+        return json(res, 502, {
+          error: `Image fetch failed with ${imageResponse.status}.`,
+          warnings: ['Supabase image URL could not be fetched for OCR.'],
+        });
+      }
+
+      image = Buffer.from(imageBytes).toString('base64');
+    } catch (error) {
+      console.error('[api:vision-ocr] image fetch failed', error);
+      return json(res, 502, {
+        error: error instanceof Error ? error.message : 'Image fetch failed.',
+        warnings: ['Supabase image URL could not be fetched for OCR.'],
+      });
+    }
+  }
+
   if (!image) return json(res, 400, { error: 'Missing image.' });
 
   const warnings: string[] = [];

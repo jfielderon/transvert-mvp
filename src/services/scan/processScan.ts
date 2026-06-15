@@ -38,6 +38,11 @@ function cleanupOcrText(text: string) {
 export async function processScanInput(input: ProcessScanInput): Promise<ScanRecord> {
   const mode = input.mode ?? 'menu';
   const trimmed = cleanupOcrText(input.text);
+  console.log('[scan:process] OCR cleanup lengths', {
+    inputLength: input.text.length,
+    trimmedLength: trimmed.length,
+  });
+
   if (!trimmed) throw new Error('Paste or enter text before processing.');
 
   const [fx, translation] = await Promise.all([

@@ -1,4 +1,4 @@
-export type TranslationProviderId = 'openai' | 'deepl' | 'local-fallback';
+export type TranslationProviderId = 'openai' | 'deepl' | 'google-translate' | 'local-fallback';
 
 export type TranslationRequest = {
   text: string;

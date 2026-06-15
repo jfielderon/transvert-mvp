@@ -47,7 +47,7 @@ function buildUrls() {
   ];
 }
 
-function parseFxPayload(payload: any, provider: string): FxSnapshot | null {
+function parseFxPayload(payload: any, provider: FxSnapshot['provider']): FxSnapshot | null {
   const gbp = Number(payload?.rates?.GBP ?? payload?.conversion_rates?.GBP);
   const usd = Number(payload?.rates?.USD ?? payload?.conversion_rates?.USD);
 
