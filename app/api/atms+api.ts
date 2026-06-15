@@ -9,7 +9,10 @@ type AtmSearchBody = {
 const fallbackCenter = { latitude: 40.4168, longitude: -3.7038 };
 
 function getGoogleMapsApiKey() {
-  return process.env.GOOGLE_MAPS_API_KEY ?? process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY;
+  return process.env.GOOGLE_MAPS_API_KEY
+    ?? process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY
+    ?? process.env.GOOGLE_API_KEY
+    ?? process.env.EXPO_PUBLIC_GOOGLE_API_KEY;
 }
 
 function mapsUrl(name: string, latitude?: number, longitude?: number) {
@@ -38,29 +41,7 @@ async function geocodeManualLocation(query: string, apiKey: string) {
   const response = await fetch(url);
   const payload = await response.json().catch(() => ({}));
 
-  if (!response.ok) {
-    console.error('Google Geocoding HTTP error', {
-      status: response.status,
-      statusText: response.statusText,
-      payload,
-    });
-    return undefined;
-  }
-
-  if (payload.status !== 'OK') {
-    console.error('Google Geocoding API error', {
-      status: payload.status,
-      errorMessage: payload.error_message,
-      query,
-      payload,
-    });
-    return undefined;
-  }
-
-  console.info('Google Geocoding response', {
-    query,
-    payload,
-  });
+  if (!response.ok || payload.status !== 'OK') return undefined;
 
   const location = payload.results?.[0]?.geometry?.location;
   if (typeof location?.lat !== 'number' || typeof location?.lng !== 'number') return undefined;
@@ -72,31 +53,7 @@ async function fetchGoogleAtms(latitude: number, longitude: number, apiKey: stri
   const response = await fetch(url);
   const payload = await response.json().catch(() => ({}));
 
-  if (!response.ok) {
-    console.error('Google Places HTTP error', {
-      status: response.status,
-      statusText: response.statusText,
-      payload,
-    });
-    return [];
-  }
-
-  if (payload.status !== 'OK' && payload.status !== 'ZERO_RESULTS') {
-    console.error('Google Places API error', {
-      status: payload.status,
-      errorMessage: payload.error_message,
-      latitude,
-      longitude,
-      payload,
-    });
-    return [];
-  }
-
-  console.info('Google Places ATM response', {
-    latitude,
-    longitude,
-    payload,
-  });
+  if (!response.ok || (payload.status !== 'OK' && payload.status !== 'ZERO_RESULTS')) return [];
 
   return (payload.results ?? []).slice(0, 8).map((place: any, index: number) => {
     const lat = place.geometry?.location?.lat;
@@ -128,7 +85,7 @@ export async function POST(request: Request) {
       provider: 'google-maps-proxy',
       atms: [],
       warnings: ['Google Maps key is missing.'],
-      error: 'Add GOOGLE_MAPS_API_KEY or EXPO_PUBLIC_GOOGLE_MAPS_API_KEY on the server.',
+      error: 'Add a Google Maps server key in Vercel for live ATM search.',
     }, 500);
   }
 
@@ -173,7 +130,6 @@ export async function POST(request: Request) {
       error: atms.length > 0 ? undefined : 'Google Places returned no ATM results.',
     });
   } catch (error) {
-    console.error('ATM proxy route failed', error);
     return json({
       provider: 'google-maps-proxy',
       atms: [],
