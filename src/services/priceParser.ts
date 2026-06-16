@@ -8,7 +8,7 @@ const CURRENCY_SYMBOLS = String.raw`\u20ac\u00a3$`;
 const LEADING_SYMBOL_PATTERN = new RegExp(String.raw`(?<symbol>[${CURRENCY_SYMBOLS}])\s*(?<amount>${AMOUNT})\b`, 'g');
 const TRAILING_SYMBOL_PATTERN = new RegExp(String.raw`\b(?<amount>${AMOUNT})\s*(?<symbol>[${CURRENCY_SYMBOLS}])`, 'g');
 const CODE_PATTERN = new RegExp(String.raw`\b(?:(?<code1>EUR|GBP|USD)\s*(?<amount1>${AMOUNT})|(?<amount2>${AMOUNT})\s*(?<code2>EUR|GBP|USD))\b`, 'gi');
-const BARE_MENU_LINE_PATTERN = new RegExp(String.raw`^(?<item>[^\d\n][^\n]{2,80}?)\s*(?:[|:•·\-–—]+\s*)?(?<amount>${AMOUNT})(?:\s*(?:GF|VG|V|VE|KCAL|CAL))?\s*$`, 'i');
+const BARE_MENU_LINE_PATTERN = new RegExp(String.raw`^(?<item>[^\d\n][^\n]{2,90}?)\s*(?:[|:•·\-–—]+\s*)?(?<amount>${AMOUNT})(?:\s*(?:GF|VG|V|VE|KCAL|CAL))?\s*$`, 'i');
 
 function currencyFromToken(token: string): CurrencyCode {
   const upper = token.toUpperCase();
@@ -64,12 +64,16 @@ function textLooksLikeMenu(text: string) {
   return /\b(menu|tapas|raciones|bocadillo|paella|ensalada|gazpacho|queso|vino|cerveza|cafe|pizza|pasta|starter|main|dessert|plato|bebida|shrimp|calamari|croqueta|empanada|patatas|bravas|soup|salad|steak|pasta|burger)\b/i.test(text);
 }
 
-function shouldInterpretAsMenuCents(amountRaw: string, amount: number, currency: CurrencyCode, context: string, text: string, mode: ScanMode) {
-  if (currency !== 'EUR') return false;
-  if (mode !== 'menu' && !textLooksLikeMenu(text)) return false;
+function shouldSkipLikelyOcrMergedAmount(amountRaw: string, amount: number, context: string, mode: ScanMode) {
+  if (mode !== 'menu') return false;
   if (/[,.]/.test(amountRaw)) return false;
+  if (amount < 100 || amount > 999) return false;
   if (/\b(total|subtotal|importe|amount due|balance due|receipt|factura)\b/i.test(context)) return false;
-  return amount >= 100 && amount <= 999;
+
+  // Google Vision can merge a divider or stray character with the real menu price,
+  // e.g. "I 24" -> "124". In menu mode, whole-number 100-999 values are much
+  // more likely to be OCR artefacts than genuine €124+ tapas prices.
+  return true;
 }
 
 function roleForContext(context: string): DetectedPrice['role'] {
@@ -96,9 +100,10 @@ function addDetectedPrice(
 
   const currency = currencyFromToken(currencyToken);
   const context = forcedContext ?? contextFor(text, start, end);
+  if (shouldSkipLikelyOcrMergedAmount(amountRaw, originalAmount, context, mode)) return;
+
   const itemText = itemTextFor(context, raw);
-  const interpretedAsMenuPricing = shouldInterpretAsMenuCents(amountRaw, originalAmount, currency, context, text, mode);
-  const amount = interpretedAsMenuPricing ? originalAmount / 100 : originalAmount;
+  const amount = originalAmount;
 
   output.push({
     id: createId('price'),
@@ -111,8 +116,7 @@ function addDetectedPrice(
     itemText: itemText || context,
     section: sectionFor(text, start),
     role: roleForContext(context),
-    confidence: interpretedAsMenuPricing ? 'interpreted-menu-pricing' : 'detected',
-    note: interpretedAsMenuPricing ? 'Interpreted as menu pricing' : undefined,
+    confidence: 'detected',
   });
 }
 
@@ -156,6 +160,7 @@ function addBareMenuPrices(output: DetectedPrice[], occupied: Set<number>, text:
     const amount = normaliseAmount(amountRaw);
     if (!Number.isFinite(amount) || amount <= 0 || amount > 500) continue;
     if (amount >= 1900 && amount <= 2100) continue;
+    if (shouldSkipLikelyOcrMergedAmount(amountRaw, amount, trimmed, mode)) continue;
 
     const amountIndex = line.lastIndexOf(amountRaw);
     const absoluteAmountStart = start + Math.max(0, amountIndex);
