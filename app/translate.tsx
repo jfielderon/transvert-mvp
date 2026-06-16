@@ -1,22 +1,64 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useEffect, useState } from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { GlassCard } from '@/components/GlassCard';
 import { Screen } from '@/components/Screen';
 import { translateText } from '@/services/translate';
 import { colors } from '@/theme/colors';
 
-const languages = ['Auto', 'Spanish', 'French', 'Italian', 'German', 'Portuguese', 'English', 'Dutch'] as const;
-const targetLanguages = ['English', 'Spanish', 'French', 'Italian', 'German', 'Portuguese', 'Dutch'] as const;
+const sourceLanguages = ['Auto', 'English', 'Spanish', 'French', 'German', 'Italian', 'Portuguese', 'Dutch', 'Polish', 'Turkish', 'Arabic', 'Chinese', 'Japanese'] as const;
+const targetLanguages = ['English', 'Spanish', 'French', 'German', 'Italian', 'Portuguese', 'Dutch', 'Polish', 'Turkish', 'Arabic', 'Chinese', 'Japanese'] as const;
 
-function nextValue<T extends readonly string[]>(items: T, current: T[number]): T[number] {
-  const index = items.indexOf(current);
-  return items[(index + 1) % items.length];
+type SourceLanguage = (typeof sourceLanguages)[number];
+type TargetLanguage = (typeof targetLanguages)[number];
+type OpenSelector = 'source' | 'target' | null;
+
+function LanguageDropdown<T extends readonly string[]>({
+  label,
+  value,
+  options,
+  isOpen,
+  onToggle,
+  onSelect,
+}: {
+  label: string;
+  value: T[number];
+  options: T;
+  isOpen: boolean;
+  onToggle: () => void;
+  onSelect: (value: T[number]) => void;
+}) {
+  return (
+    <View style={styles.dropdownWrap}>
+      <Pressable style={[styles.selector, isOpen && styles.selectorActive]} onPress={onToggle}>
+        <Text style={styles.selectorLabel}>{label}</Text>
+        <Text style={styles.selectorText}>{value}</Text>
+        <Ionicons name={isOpen ? 'chevron-up' : 'chevron-down'} color={colors.dim} size={15} />
+      </Pressable>
+      {isOpen && (
+        <GlassCard style={styles.dropdownMenu}>
+          <ScrollView nestedScrollEnabled style={styles.dropdownScroll}>
+            {options.map((option) => (
+              <Pressable
+                key={option}
+                style={[styles.dropdownOption, option === value && styles.dropdownOptionActive]}
+                onPress={() => onSelect(option)}
+              >
+                <Text style={[styles.dropdownOptionText, option === value && styles.dropdownOptionTextActive]}>{option}</Text>
+                {option === value && <Ionicons name="checkmark" color={colors.cyan} size={16} />}
+              </Pressable>
+            ))}
+          </ScrollView>
+        </GlassCard>
+      )}
+    </View>
+  );
 }
 
 export default function TranslateScreen() {
-  const [sourceLanguage, setSourceLanguage] = useState<(typeof languages)[number]>('Auto');
-  const [targetLanguage, setTargetLanguage] = useState<(typeof targetLanguages)[number]>('English');
+  const [sourceLanguage, setSourceLanguage] = useState<SourceLanguage>('Auto');
+  const [targetLanguage, setTargetLanguage] = useState<TargetLanguage>('English');
+  const [openSelector, setOpenSelector] = useState<OpenSelector>(null);
   const [text, setText] = useState('');
   const [translated, setTranslated] = useState('');
   const [provider, setProvider] = useState('ready');
@@ -34,7 +76,7 @@ export default function TranslateScreen() {
 
     let active = true;
     const timer = setTimeout(async () => {
-    setIsTranslating(true);
+      setIsTranslating(true);
       setError(null);
 
       try {
@@ -80,17 +122,29 @@ export default function TranslateScreen() {
 
       <GlassCard style={styles.panel}>
         <View style={styles.languageRow}>
-          <Pressable style={styles.selector} onPress={() => setSourceLanguage(nextValue(languages, sourceLanguage))}>
-            <Text style={styles.selectorLabel}>From</Text>
-            <Text style={styles.selectorText}>{sourceLanguage}</Text>
-            <Ionicons name="chevron-down" color={colors.dim} size={15} />
-          </Pressable>
+          <LanguageDropdown
+            label="From"
+            value={sourceLanguage}
+            options={sourceLanguages}
+            isOpen={openSelector === 'source'}
+            onToggle={() => setOpenSelector((current) => current === 'source' ? null : 'source')}
+            onSelect={(value) => {
+              setSourceLanguage(value as SourceLanguage);
+              setOpenSelector(null);
+            }}
+          />
           <Ionicons name="arrow-forward" color={colors.dim} size={17} />
-          <Pressable style={styles.selector} onPress={() => setTargetLanguage(nextValue(targetLanguages, targetLanguage))}>
-            <Text style={styles.selectorLabel}>To</Text>
-            <Text style={styles.selectorText}>{targetLanguage}</Text>
-            <Ionicons name="chevron-down" color={colors.dim} size={15} />
-          </Pressable>
+          <LanguageDropdown
+            label="To"
+            value={targetLanguage}
+            options={targetLanguages}
+            isOpen={openSelector === 'target'}
+            onToggle={() => setOpenSelector((current) => current === 'target' ? null : 'target')}
+            onSelect={(value) => {
+              setTargetLanguage(value as TargetLanguage);
+              setOpenSelector(null);
+            }}
+          />
         </View>
 
         <TextInput
@@ -142,17 +196,23 @@ const styles = StyleSheet.create({
   },
   panel: {
     padding: 18,
+    overflow: 'visible',
   },
   languageRow: {
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     gap: 10,
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
     paddingBottom: 14,
+    zIndex: 5,
+  },
+  dropdownWrap: {
+    flex: 1,
+    position: 'relative',
+    zIndex: 10,
   },
   selector: {
-    flex: 1,
     minHeight: 48,
     flexDirection: 'row',
     alignItems: 'center',
@@ -161,6 +221,9 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.border,
     paddingHorizontal: 12,
+  },
+  selectorActive: {
+    borderColor: colors.cyanGlow,
   },
   selectorLabel: {
     color: colors.dim,
@@ -173,6 +236,36 @@ const styles = StyleSheet.create({
     color: colors.text,
     fontSize: 14,
     fontWeight: '800',
+  },
+  dropdownMenu: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    top: 56,
+    padding: 8,
+    zIndex: 20,
+  },
+  dropdownScroll: {
+    maxHeight: 250,
+  },
+  dropdownOption: {
+    minHeight: 38,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    borderRadius: 12,
+    paddingHorizontal: 10,
+  },
+  dropdownOptionActive: {
+    backgroundColor: 'rgba(103,232,249,0.08)',
+  },
+  dropdownOptionText: {
+    color: colors.muted,
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  dropdownOptionTextActive: {
+    color: colors.text,
   },
   input: {
     minHeight: 190,
