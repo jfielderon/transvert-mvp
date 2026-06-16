@@ -16,13 +16,63 @@ const currencyNames: Record<CurrencyCode, string> = {
   GBP: 'British Pound',
   USD: 'US Dollar',
 };
+const bankPlaceholders = ['Revolut', 'Starling', 'Monzo', 'Metro', 'Chase', 'Wise'];
+
+type OpenCurrencySelector = 'from' | 'to' | null;
+
+function formatUpdatedAt(timestamp?: number) {
+  if (!timestamp) return 'waiting for rate';
+  return `updated ${new Date(timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+}
+
+function CurrencyDropdown({
+  value,
+  isOpen,
+  onToggle,
+  onSelect,
+}: {
+  value: CurrencyCode;
+  isOpen: boolean;
+  onToggle: () => void;
+  onSelect: (value: CurrencyCode) => void;
+}) {
+  return (
+    <View style={styles.dropdownWrap}>
+      <Pressable style={[styles.selector, isOpen && styles.selectorActive]} onPress={onToggle}>
+        <Text style={styles.selectorText}>{value}</Text>
+        <Ionicons name={isOpen ? 'chevron-up' : 'chevron-down'} color={colors.dim} size={16} />
+      </Pressable>
+      {isOpen && (
+        <GlassCard style={styles.dropdownMenu}>
+          {currencies.map((currency) => (
+            <Pressable
+              key={currency}
+              style={[styles.dropdownOption, currency === value && styles.dropdownOptionActive]}
+              onPress={() => onSelect(currency)}
+            >
+              <View>
+                <Text style={[styles.dropdownCode, currency === value && styles.dropdownCodeActive]}>{currency}</Text>
+                <Text style={styles.dropdownName}>{currencyNames[currency]}</Text>
+              </View>
+              {currency === value && <Ionicons name="checkmark" color={colors.cyan} size={16} />}
+            </Pressable>
+          ))}
+        </GlassCard>
+      )}
+    </View>
+  );
+}
 
 export default function ConvertScreen() {
+  const initialSnapshot = getRateSnapshot();
   const [amount, setAmount] = useState('100');
-  const [rates, setRates] = useState<FxRates>(getRateSnapshot().rates);
-  const [status, setStatus] = useState(getRateSnapshot().status);
+  const [rates, setRates] = useState<FxRates>(initialSnapshot.rates);
+  const [status, setStatus] = useState(initialSnapshot.status);
+  const [provider, setProvider] = useState(initialSnapshot.provider);
+  const [fetchedAt, setFetchedAt] = useState(initialSnapshot.fetchedAt);
   const [fromCurrency, setFromCurrency] = useState<CurrencyCode>('EUR');
   const [toCurrency, setToCurrency] = useState<CurrencyCode>('GBP');
+  const [openSelector, setOpenSelector] = useState<OpenCurrencySelector>(null);
   const numericAmount = Number(amount.replace(',', '.')) || 0;
   const converted = useMemo(() => {
     const gbpValue = convertWithRates(numericAmount, fromCurrency, rates);
@@ -33,13 +83,10 @@ export default function ConvertScreen() {
     loadFxRates().then((snapshot) => {
       setRates(snapshot.rates);
       setStatus(snapshot.status);
+      setProvider(snapshot.provider);
+      setFetchedAt(snapshot.fetchedAt);
     });
   }, []);
-
-  const cycleCurrency = (current: CurrencyCode, setter: (currency: CurrencyCode) => void) => {
-    const index = currencies.indexOf(current);
-    setter(currencies[(index + 1) % currencies.length]);
-  };
 
   const swapCurrencies = () => {
     setFromCurrency(toCurrency);
@@ -67,10 +114,15 @@ export default function ConvertScreen() {
             />
             <Text style={styles.meta}>{currencyNames[fromCurrency]}</Text>
           </View>
-          <Pressable style={styles.selector} onPress={() => cycleCurrency(fromCurrency, setFromCurrency)}>
-            <Text style={styles.selectorText}>{fromCurrency}</Text>
-            <Ionicons name="chevron-down" color={colors.dim} size={16} />
-          </Pressable>
+          <CurrencyDropdown
+            value={fromCurrency}
+            isOpen={openSelector === 'from'}
+            onToggle={() => setOpenSelector((current) => current === 'from' ? null : 'from')}
+            onSelect={(currency) => {
+              setFromCurrency(currency);
+              setOpenSelector(null);
+            }}
+          />
         </View>
 
         <View style={styles.dividerRow}>
@@ -82,21 +134,29 @@ export default function ConvertScreen() {
         </View>
 
         <View style={styles.currencyRow}>
-          <View>
+          <View style={styles.amountBlock}>
             <Text style={[styles.label, styles.accentLabel]}>To</Text>
             <Text style={styles.converted}>{formatCurrency(converted, toCurrency)}</Text>
             <Text style={styles.meta}>{currencyNames[toCurrency]}</Text>
           </View>
-          <Pressable style={styles.selector} onPress={() => cycleCurrency(toCurrency, setToCurrency)}>
-            <Text style={styles.selectorText}>{toCurrency}</Text>
-            <Ionicons name="chevron-down" color={colors.dim} size={16} />
-          </Pressable>
+          <CurrencyDropdown
+            value={toCurrency}
+            isOpen={openSelector === 'to'}
+            onToggle={() => setOpenSelector((current) => current === 'to' ? null : 'to')}
+            onSelect={(currency) => {
+              setToCurrency(currency);
+              setOpenSelector(null);
+            }}
+          />
         </View>
       </GlassCard>
 
       <View style={styles.rateRow}>
-        <Text style={styles.rate}>1 {fromCurrency} = {convertBetween(1, fromCurrency, toCurrency, rates).toFixed(4)} {toCurrency}</Text>
-        <Text style={styles.estimate}>{status}</Text>
+        <View style={styles.rateTextBlock}>
+          <Text style={styles.rate}>1 {fromCurrency} = {convertBetween(1, fromCurrency, toCurrency, rates).toFixed(4)} {toCurrency}</Text>
+          <Text style={styles.rateMeta}>{provider} • {formatUpdatedAt(fetchedAt)}</Text>
+        </View>
+        <Text style={[styles.estimate, status === 'live' ? styles.liveStatus : styles.cachedStatus]}>{status}</Text>
       </View>
 
       <View style={styles.quickRow}>
@@ -106,6 +166,25 @@ export default function ConvertScreen() {
           </Pressable>
         ))}
       </View>
+
+      <GlassCard style={styles.bankCard}>
+        <View style={styles.bankHeader}>
+          <View>
+            <Text style={[styles.label, styles.accentLabel]}>Bank link</Text>
+            <Text style={styles.bankTitle}>Exact fees coming soon.</Text>
+          </View>
+          <Ionicons name="lock-closed-outline" color={colors.cyan} size={20} />
+        </View>
+        <Text style={styles.bankCopy}>Connect a travel card later to show exact ATM charges, FX markups, card fees and final bank deductions.</Text>
+        <View style={styles.bankGrid}>
+          {bankPlaceholders.map((bank) => (
+            <View key={bank} style={styles.bankPill}>
+              <Text style={styles.bankPillText}>{bank}</Text>
+            </View>
+          ))}
+        </View>
+        <Text style={styles.bankFootnote}>Coming soon — exact travel card fees, ATM charges and FX markups.</Text>
+      </GlassCard>
 
       <GlassCard style={styles.chartCard}>
         <View style={styles.chartHeader}>
@@ -122,7 +201,7 @@ export default function ConvertScreen() {
         </View>
       </GlassCard>
 
-      <Text style={styles.disclaimer}>Rates are live when network access is available and fall back locally in Expo Go.</Text>
+      <Text style={styles.disclaimer}>Rates are live when network access is available and fall back to recent cache or local rates when unavailable.</Text>
     </Screen>
   );
 }
@@ -148,12 +227,15 @@ const styles = StyleSheet.create({
   },
   panel: {
     padding: 22,
+    overflow: 'visible',
+    zIndex: 4,
   },
   currencyRow: {
     minHeight: 120,
     flexDirection: 'row',
     justifyContent: 'space-between',
     gap: 14,
+    zIndex: 6,
   },
   amountBlock: {
     flex: 1,
@@ -187,6 +269,10 @@ const styles = StyleSheet.create({
     color: colors.muted,
     fontSize: 14,
   },
+  dropdownWrap: {
+    position: 'relative',
+    zIndex: 20,
+  },
   selector: {
     height: 38,
     flexDirection: 'row',
@@ -197,15 +283,52 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
     paddingHorizontal: 13,
   },
+  selectorActive: {
+    borderColor: colors.cyanGlow,
+  },
   selectorText: {
     color: colors.text,
     fontSize: 14,
+    fontWeight: '700',
+  },
+  dropdownMenu: {
+    position: 'absolute',
+    top: 46,
+    right: 0,
+    width: 190,
+    padding: 8,
+    zIndex: 30,
+  },
+  dropdownOption: {
+    minHeight: 48,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    borderRadius: 14,
+    paddingHorizontal: 10,
+  },
+  dropdownOptionActive: {
+    backgroundColor: 'rgba(103,232,249,0.08)',
+  },
+  dropdownCode: {
+    color: colors.text,
+    fontSize: 14,
+    fontWeight: '900',
+  },
+  dropdownCodeActive: {
+    color: colors.cyan,
+  },
+  dropdownName: {
+    marginTop: 2,
+    color: colors.dim,
+    fontSize: 11,
     fontWeight: '700',
   },
   dividerRow: {
     flexDirection: 'row',
     alignItems: 'center',
     marginVertical: 6,
+    zIndex: 1,
   },
   divider: {
     flex: 1,
@@ -228,13 +351,28 @@ const styles = StyleSheet.create({
     gap: 12,
     marginTop: 18,
   },
+  rateTextBlock: {
+    flex: 1,
+  },
   rate: {
     color: colors.muted,
     fontSize: 14,
   },
+  rateMeta: {
+    marginTop: 4,
+    color: colors.dim,
+    fontSize: 11,
+  },
   estimate: {
-    color: colors.success,
     fontSize: 12,
+    fontWeight: '900',
+    textTransform: 'uppercase',
+  },
+  liveStatus: {
+    color: colors.success,
+  },
+  cachedStatus: {
+    color: colors.dim,
   },
   quickRow: {
     flexDirection: 'row',
@@ -254,6 +392,52 @@ const styles = StyleSheet.create({
     color: colors.text,
     fontSize: 12,
     fontWeight: '700',
+  },
+  bankCard: {
+    marginTop: 24,
+  },
+  bankHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 14,
+  },
+  bankTitle: {
+    marginTop: 8,
+    color: colors.text,
+    fontSize: 20,
+    fontWeight: '900',
+  },
+  bankCopy: {
+    marginTop: 12,
+    color: colors.muted,
+    fontSize: 13,
+    lineHeight: 20,
+  },
+  bankGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginTop: 14,
+  },
+  bankPill: {
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: colors.border,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  bankPillText: {
+    color: colors.text,
+    fontSize: 12,
+    fontWeight: '800',
+  },
+  bankFootnote: {
+    marginTop: 14,
+    color: colors.cyan,
+    fontSize: 12,
+    fontWeight: '800',
+    lineHeight: 18,
   },
   chartCard: {
     marginTop: 24,
@@ -290,6 +474,7 @@ const styles = StyleSheet.create({
   },
   disclaimer: {
     marginTop: 22,
+    marginBottom: 120,
     color: colors.dim,
     fontSize: 13,
     lineHeight: 20,
