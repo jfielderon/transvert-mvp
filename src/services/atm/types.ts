@@ -1,9 +1,16 @@
+export type AtmConfidence = 'confirmed-free' | 'likely-free' | 'fee-likely' | 'unknown';
+
 export type AtmLocation = {
   id: string;
   name: string;
   feeLabel: string;
   feeEstimate: number | null;
-  feeDataStatus?: 'estimate' | 'community-coming-soon' | 'unknown';
+  feeDataStatus?: 'estimate' | 'community-coming-soon' | 'unknown' | 'osm-confirmed' | 'operator-rule';
+  confidence?: AtmConfidence;
+  confidenceLabel?: string;
+  sourceLabel?: string;
+  operator?: string;
+  network?: string;
   risk: 'low' | 'medium' | 'high';
   riskLabel: string;
   distanceMeters: number;
