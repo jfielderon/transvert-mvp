@@ -17,6 +17,9 @@ const localAtms: AtmLocation[] = [
     feeLabel: 'Fee estimate',
     feeEstimate: null,
     feeDataStatus: 'community-coming-soon',
+    confidence: 'unknown',
+    confidenceLabel: 'Unknown',
+    sourceLabel: 'Local fallback',
     risk: 'medium',
     riskLabel: 'Fee data estimate',
     distanceMeters: 240,
@@ -29,6 +32,9 @@ const localAtms: AtmLocation[] = [
     feeLabel: 'Fee unknown',
     feeEstimate: null,
     feeDataStatus: 'unknown',
+    confidence: 'unknown',
+    confidenceLabel: 'Unknown',
+    sourceLabel: 'Local fallback',
     risk: 'high',
     riskLabel: 'Avoid DCC prompts',
     distanceMeters: 410,
@@ -64,7 +70,7 @@ function localFallback(error?: string): AtmSearchResult {
     provider: 'local-fallback',
     center: fallbackCenter,
     atms: withLocalCoordinates(fallbackCenter.latitude, fallbackCenter.longitude),
-    warnings: ['ATM search is in fallback mode. Add a Google Maps/Places server key to return live nearby ATMs.'],
+    warnings: ['Live ATM search is unavailable. Showing safe fallback estimates while the server API is checked.'],
     error,
   };
 }
