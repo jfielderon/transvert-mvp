@@ -1,11 +1,12 @@
 import { Ionicons } from '@expo/vector-icons';
 import { router, useLocalSearchParams } from 'expo-router';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Image, Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { GlassCard } from '@/components/GlassCard';
 import { Screen } from '@/components/Screen';
 import { getCachedRate } from '@/services/fx';
 import { buildRebuiltMenu } from '@/services/menu/rebuildMenu';
+import { speakLocalPhrase } from '@/services/speech/speak';
 import { translateMenuText } from '@/services/translate';
 import { saveScan } from '@/storage/scans';
 import { useScans } from '@/hooks/useScans';
@@ -27,11 +28,26 @@ export default function ResultsScreen() {
   const [savedMessage, setSavedMessage] = useState(false);
   const [showRawOcr, setShowRawOcr] = useState(false);
   const [showOriginal, setShowOriginal] = useState(false);
+  const [imageLoadError, setImageLoadError] = useState(false);
+  const [spokenId, setSpokenId] = useState<string | null>(null);
   const scan = useMemo(() => scans.find((item) => item.id === id), [id, scans]);
   const isWide = width >= 760;
 
+  useEffect(() => {
+    refresh();
+  }, [id, refresh]);
+
   if (isLoading) return <Screen><Text style={styles.loading}>Loading scan...</Text></Screen>;
-  if (!scan) return <Screen><Text style={styles.loading}>Scan not found</Text></Screen>;
+  if (!scan) {
+    return (
+      <Screen>
+        <Text style={styles.loading}>Result loading...</Text>
+        <Text style={styles.copy}>The result may still be saving. Try refreshing, or scan again if it does not appear.</Text>
+        <Pressable style={styles.primaryActionSingle} onPress={refresh}><Text style={styles.primaryText}>Refresh result</Text></Pressable>
+        <Pressable style={styles.secondaryActionSingle} onPress={() => router.replace('/scan')}><Text style={styles.secondaryText}>Scan again</Text></Pressable>
+      </Screen>
+    );
+  }
 
   const mode = scan.mode ?? 'menu';
   const scanAny = scan as any;
@@ -47,6 +63,12 @@ export default function ResultsScreen() {
     setSavedMessage(true);
   };
 
+  const speakItem = (item: any) => {
+    setSpokenId(item.id);
+    speakLocalPhrase(`${item.originalName}, por favor`, 'es-ES');
+    setTimeout(() => setSpokenId(null), 1600);
+  };
+
   return (
     <Screen>
       <View style={styles.topBar}>
@@ -59,7 +81,14 @@ export default function ResultsScreen() {
 
       {scan.imageUri && (
         <View style={styles.imageFrame}>
-          <Image source={{ uri: scan.imageUri }} resizeMode="contain" style={styles.image} />
+          {!imageLoadError ? (
+            <Image source={{ uri: scan.imageUri }} resizeMode="contain" style={styles.image} onError={() => setImageLoadError(true)} />
+          ) : (
+            <View style={styles.imageFallback}>
+              <Ionicons name="image-outline" color={colors.dim} size={28} />
+              <Text style={styles.imageFallbackText}>Original image could not be reloaded, but the rebuilt menu is saved.</Text>
+            </View>
+          )}
           <View style={styles.imageBadge}>
             <Text style={styles.imageBadgeLabel}>Original captured</Text>
             <Text style={styles.imageBadgeCopy}>Rebuilt below in English + GBP</Text>
@@ -81,7 +110,11 @@ export default function ResultsScreen() {
       {showOriginal && scan.imageUri ? (
         <GlassCard style={styles.card}>
           <Text style={styles.label}>Original</Text>
-          <Image source={{ uri: scan.imageUri }} resizeMode="contain" style={styles.originalImage} />
+          {!imageLoadError ? (
+            <Image source={{ uri: scan.imageUri }} resizeMode="contain" style={styles.originalImage} onError={() => setImageLoadError(true)} />
+          ) : (
+            <Text style={styles.empty}>Original image unavailable. This usually happens when the browser clears a temporary upload URI. Future uploads will keep the rebuilt menu safe.</Text>
+          )}
         </GlassCard>
       ) : (
         <>
@@ -96,7 +129,7 @@ export default function ResultsScreen() {
               <View style={styles.menuHeaderText}>
                 <Text style={styles.menuEyebrow}>Translated restaurant menu</Text>
                 <Text style={styles.menuTitle}>{rebuiltMenu?.title ?? 'Translated Menu'}</Text>
-                <Text style={styles.menuSubtitle}>{rebuiltMenu?.subtitle ?? 'English + GBP estimates'}</Text>
+                <Text style={styles.menuSubtitle}>Tap the speaker to order it in Spanish</Text>
               </View>
               <View style={styles.menuCountPill}>
                 <Text style={styles.menuCount}>{rebuiltMenu?.itemCount ?? scan.prices.length}</Text>
@@ -122,7 +155,13 @@ export default function ResultsScreen() {
                           </View>
                         </View>
                         {item.description && <Text style={styles.description}>{item.description}</Text>}
-                        {item.icons.length > 0 && <Text style={styles.icons}>{item.icons.join('  ')}</Text>}
+                        <View style={styles.itemFooter}>
+                          {item.icons.length > 0 && <Text style={styles.icons}>{item.icons.join('  ')}</Text>}
+                          <Pressable style={[styles.speakButton, spokenId === item.id && styles.speakButtonActive]} onPress={() => speakItem(item)}>
+                            <Ionicons name="volume-high-outline" color={spokenId === item.id ? colors.navy950 : colors.cyan} size={16} />
+                            <Text style={[styles.speakText, spokenId === item.id && styles.speakTextActive]}>Say it</Text>
+                          </Pressable>
+                        </View>
                       </View>
                     ))}
                   </View>
@@ -169,7 +208,7 @@ export default function ResultsScreen() {
 
       <View style={styles.actions}>
         <Pressable style={styles.secondaryAction} onPress={handleSave}><Text style={styles.secondaryText}>Save scan</Text></Pressable>
-        <Pressable style={styles.primaryAction} onPress={() => router.push('/scan')}><Text style={styles.primaryText}>Scan again</Text></Pressable>
+        <Pressable style={styles.primaryAction} onPress={() => router.replace('/scan')}><Text style={styles.primaryText}>Scan again</Text></Pressable>
       </View>
     </Screen>
   );
@@ -182,6 +221,8 @@ const styles = StyleSheet.create({
   topTitle: { color: colors.muted, fontSize: 12, fontWeight: '900', letterSpacing: 4, textTransform: 'uppercase' },
   imageFrame: { height: 250, overflow: 'hidden', borderRadius: 18, borderWidth: 1, borderColor: colors.border, backgroundColor: 'rgba(2,7,19,0.74)', marginTop: 24, position: 'relative' },
   image: { width: '100%', height: '100%' },
+  imageFallback: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24 },
+  imageFallbackText: { marginTop: 10, color: colors.muted, textAlign: 'center', lineHeight: 20 },
   imageBadge: { position: 'absolute', left: 16, right: 16, bottom: 16, borderRadius: 18, backgroundColor: 'rgba(2,7,19,0.86)', borderWidth: 1, borderColor: 'rgba(103,232,249,0.28)', padding: 14 },
   imageBadgeLabel: { color: colors.cyan, fontSize: 11, fontWeight: '900', letterSpacing: 2, textTransform: 'uppercase' },
   imageBadgeCopy: { marginTop: 6, color: colors.text, fontSize: 18, fontWeight: '900' },
@@ -217,7 +258,12 @@ const styles = StyleSheet.create({
   convertedPrice: { color: colors.cyan, fontSize: 17, fontWeight: '900' },
   originalPrice: { marginTop: 5, color: colors.text, fontSize: 12, fontWeight: '800' },
   description: { marginTop: 8, color: colors.muted, fontSize: 14, lineHeight: 20 },
-  icons: { marginTop: 8, fontSize: 16 },
+  itemFooter: { marginTop: 10, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 },
+  icons: { fontSize: 16 },
+  speakButton: { flexDirection: 'row', alignItems: 'center', gap: 6, borderRadius: 999, borderWidth: 1, borderColor: 'rgba(103,232,249,0.36)', paddingHorizontal: 12, paddingVertical: 7 },
+  speakButtonActive: { backgroundColor: colors.cyan, borderColor: colors.cyan },
+  speakText: { color: colors.cyan, fontSize: 12, fontWeight: '900' },
+  speakTextActive: { color: colors.navy950 },
   rebuiltNote: { marginTop: 18, color: colors.dim, fontSize: 12, lineHeight: 18 },
   qualityHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   qualityScore: { color: colors.text, fontSize: 18, fontWeight: '900' },
@@ -231,7 +277,7 @@ const styles = StyleSheet.create({
   textGridWide: { flexDirection: 'row' },
   textCardWide: { flex: 1 },
   body: { marginTop: 14, color: colors.text, fontSize: 16, lineHeight: 25 },
-  empty: { marginTop: 14, color: colors.muted },
+  empty: { marginTop: 14, color: colors.muted, lineHeight: 20 },
   disclaimer: { marginTop: 14, color: colors.dim, fontSize: 12, lineHeight: 18 },
   rawHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   rawSubhead: { marginTop: 14, color: colors.cyan, fontSize: 11, fontWeight: '900', letterSpacing: 1.7, textTransform: 'uppercase' },
@@ -239,7 +285,9 @@ const styles = StyleSheet.create({
   savedText: { color: colors.success, fontWeight: '800' },
   actions: { flexDirection: 'row', gap: 10, marginTop: 24, marginBottom: 20 },
   secondaryAction: { flex: 1, height: 50, alignItems: 'center', justifyContent: 'center', borderRadius: 25, borderWidth: 1, borderColor: colors.border },
+  secondaryActionSingle: { marginTop: 12, height: 50, alignItems: 'center', justifyContent: 'center', borderRadius: 25, borderWidth: 1, borderColor: colors.border },
   secondaryText: { color: colors.text, fontWeight: '800' },
   primaryAction: { flex: 1, height: 50, alignItems: 'center', justifyContent: 'center', borderRadius: 25, backgroundColor: colors.cyan },
+  primaryActionSingle: { marginTop: 22, height: 50, alignItems: 'center', justifyContent: 'center', borderRadius: 25, backgroundColor: colors.cyan },
   primaryText: { color: colors.navy950, fontWeight: '900' },
 });
