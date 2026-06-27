@@ -50,15 +50,37 @@ function cleanLines(lines: any[] = []) {
     }));
 }
 
+function estimateTextQuality(text: string, lineCount: number) {
+  const words = text.split(/\s+/).filter(Boolean);
+  const shortWords = words.filter((word) => word.length <= 2 && !/^\d+[,.]?\d*$/.test(word)).length;
+  const priceLike = (text.match(/\d+[,.]?\d{0,2}/g) ?? []).length;
+  let score = 68;
+  if (words.length < 12) score -= 28;
+  if (lineCount >= 6) score += 8;
+  if (priceLike >= 2) score += 8;
+  if (shortWords > words.length * 0.28) score -= 18;
+  score = Math.max(0, Math.min(100, score));
+
+  if (score >= 72) return { score, label: 'good', reason: 'Readable OCR with enough text for reliable menu parsing.' };
+  if (score >= 48) return { score, label: 'fair', reason: 'OCR is usable, but some menu lines may need checking.' };
+  return { score, label: 'poor', reason: 'OCR looks unreliable. Retake closer, flatter and without glare.' };
+}
+
 export async function processScanInput(input: ProcessScanInput): Promise<ScanRecord> {
   const mode = input.mode ?? 'menu';
   const trimmed = cleanupOcrText(input.text);
   const ocrLines = cleanLines(input.ocrLines);
+  const ocrQuality = input.ocrQuality ?? estimateTextQuality(trimmed, ocrLines.length);
+  const ocrWarnings = [
+    ...(input.ocrWarnings ?? []),
+    ocrQuality?.label === 'poor' ? ocrQuality.reason : undefined,
+  ].filter(Boolean);
+
   console.log('[scan:process] OCR cleanup lengths', {
     inputLength: input.text.length,
     trimmedLength: trimmed.length,
     lineCount: ocrLines.length,
-    quality: input.ocrQuality,
+    quality: ocrQuality,
   });
 
   if (!trimmed) throw new Error('Paste or enter text before processing.');
@@ -101,8 +123,8 @@ export async function processScanInput(input: ProcessScanInput): Promise<ScanRec
     fxFetchedAt: fx.fetchedAt ? new Date(fx.fetchedAt).toISOString() : undefined,
     realCost: estimateRealCost(translatedItems, marketTotal),
     ocrLines,
-    ocrQuality: input.ocrQuality,
-    ocrWarnings: input.ocrWarnings ?? [],
+    ocrQuality,
+    ocrWarnings,
   };
 
   return record;
