@@ -10,6 +10,18 @@ import { saveScan } from '@/storage/scans';
 import { useScans } from '@/hooks/useScans';
 import { colors } from '@/theme/colors';
 
+function qualityFallback(text: string) {
+  const words = text.split(/\s+/).filter(Boolean);
+  const shortWords = words.filter((word) => word.length <= 2 && !/^\d+[,.]?\d*$/.test(word)).length;
+  let score = 68;
+  if (words.length < 12) score -= 28;
+  if (shortWords > words.length * 0.28) score -= 18;
+  score = Math.max(0, Math.min(100, score));
+  if (score >= 72) return { score, label: 'good', reason: 'Readable scan.' };
+  if (score >= 48) return { score, label: 'fair', reason: 'Usable scan, but check details.' };
+  return { score, label: 'poor', reason: 'Retake closer, flatter and without glare.' };
+}
+
 export default function ResultsScreen() {
   const { id } = useLocalSearchParams<{ id?: string }>();
   const { width } = useWindowDimensions();
@@ -37,9 +49,14 @@ export default function ResultsScreen() {
   }
 
   const mode = scan.mode ?? 'menu';
+  const scanAny = scan as any;
   const translatedText = scan.translatedText ?? translateMenuText(scan.originalText);
   const shouldShowTotal = mode === 'receipt';
   const overlayItems = scan.prices.slice(0, 4);
+  const ocrQuality = scanAny.ocrQuality ?? qualityFallback(scan.originalText);
+  const ocrLines = Array.isArray(scanAny.ocrLines) ? scanAny.ocrLines : [];
+  const ocrWarnings = Array.isArray(scanAny.ocrWarnings) ? scanAny.ocrWarnings : [];
+  const qualityTone = ocrQuality.label === 'poor' ? styles.qualityPoor : ocrQuality.label === 'fair' ? styles.qualityFair : styles.qualityGood;
 
   const handleSave = async () => {
     await saveScan({ ...scan, translatedText });
@@ -98,7 +115,7 @@ export default function ResultsScreen() {
           {overlayMode && overlayItems.length > 0 && (
             <View pointerEvents="none" style={styles.overlayLayer}>
               {overlayItems.map((price, index) => (
-                <View key={price.id} style={[styles.overlayChip, { top: 18 + index * 58, left: index % 2 === 0 ? 14 : undefined, right: index % 2 === 1 ? 14 : undefined }]}> 
+                <View key={price.id} style={[styles.overlayChip, { top: 18 + index * 58, left: index % 2 === 0 ? 14 : undefined, right: index % 2 === 1 ? 14 : undefined }]}>
                   <Text style={styles.overlayOriginal} numberOfLines={1}>{price.itemText || price.context || 'Menu item'}</Text>
                   <Text style={styles.overlayEnglish} numberOfLines={1}>{price.translatedItemText || 'English translation'}</Text>
                   <Text style={styles.overlayPrice}>{formatCurrency(price.amount, price.currency)} ≈ {formatGbp(price.convertedGbp ?? 0)}</Text>
@@ -127,6 +144,17 @@ export default function ResultsScreen() {
         </Text>
         {shouldShowTotal && <Text style={styles.total}>{formatGbp(scan.estimatedTotalGbp)}</Text>}
       </View>
+
+      <GlassCard style={[styles.card, qualityTone]}>
+        <View style={styles.qualityHeader}>
+          <Text style={styles.label}>OCR quality</Text>
+          <Text style={styles.qualityScore}>{ocrQuality.score ?? '—'}%</Text>
+        </View>
+        <Text style={styles.qualityTitle}>{String(ocrQuality.label ?? 'unknown').toUpperCase()}</Text>
+        <Text style={styles.qualityCopy}>{ocrQuality.reason ?? 'Scan quality estimate.'}</Text>
+        <Text style={styles.qualityMeta}>{ocrLines.length ? `${ocrLines.length} positioned text lines captured for true overlay.` : 'Bounding boxes unavailable for this scan. Retake after the new deployment for true overlay data.'}</Text>
+        {ocrWarnings[0] && <Text style={styles.qualityWarning}>{ocrWarnings[0]}</Text>}
+      </GlassCard>
 
       <GlassCard style={styles.card}>
         <View style={styles.priceHeader}>
@@ -188,7 +216,7 @@ export default function ResultsScreen() {
         )}
       </GlassCard>
 
-      <Text style={styles.disclaimer}>FX estimate only. Overlay positions are approximate until OCR bounding boxes are enabled.</Text>
+      <Text style={styles.disclaimer}>FX estimate only. True overlay uses OCR text boxes where available; poor OCR should be retaken.</Text>
 
       {savedMessage && (
         <View style={styles.savedBanner}>
@@ -230,6 +258,15 @@ const styles = StyleSheet.create({
   label: { color: colors.dim, fontSize: 10, fontWeight: '900', letterSpacing: 2.4, textTransform: 'uppercase' },
   total: { marginTop: 10, color: colors.text, fontSize: 42, fontWeight: '900' },
   copy: { marginTop: 8, color: colors.muted, fontSize: 14, lineHeight: 21 },
+  qualityHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  qualityScore: { color: colors.text, fontSize: 18, fontWeight: '900' },
+  qualityTitle: { marginTop: 10, color: colors.text, fontSize: 18, fontWeight: '900' },
+  qualityCopy: { marginTop: 6, color: colors.muted, fontSize: 13, lineHeight: 19 },
+  qualityMeta: { marginTop: 8, color: colors.dim, fontSize: 12, lineHeight: 18 },
+  qualityWarning: { marginTop: 8, color: colors.danger, fontSize: 12, fontWeight: '800', lineHeight: 18 },
+  qualityGood: { borderColor: 'rgba(34,197,94,0.45)' },
+  qualityFair: { borderColor: 'rgba(250,204,21,0.45)' },
+  qualityPoor: { borderColor: 'rgba(251,113,133,0.55)' },
   textGrid: { gap: 12 },
   textGridWide: { flexDirection: 'row' },
   textCardWide: { flex: 1 },
