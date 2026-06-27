@@ -5,6 +5,8 @@ export type OcrResult = {
   status: 'success' | 'fallback' | 'failed';
   provider: OcrProviderId;
   warnings: string[];
+  lines?: any[];
+  quality?: any;
 };
 
 export type OcrInput = {
