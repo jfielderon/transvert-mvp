@@ -49,47 +49,15 @@ export default function RootLayout() {
           },
         }}
       >
-        <Tabs.Screen
-          name="index"
-          options={{
-            title: 'Home',
-            tabBarIcon: ({ color }) => <Ionicons name="menu-outline" color={color} size={22} />,
-          }}
-        />
-        <Tabs.Screen
-          name="translate"
-          options={{
-            title: 'Translate',
-            tabBarIcon: ({ color }) => <Ionicons name="language-outline" color={color} size={21} />,
-          }}
-        />
-        <Tabs.Screen
-          name="scan"
-          options={{
-            title: '',
-            tabBarIcon: ({ focused, color }) => (
-              <View style={[styles.scanTab, focused && styles.scanTabActive]}>
-                <MaterialCommunityIcons name="camera-iris" color={focused ? colors.navy950 : color} size={29} />
-              </View>
-            ),
-            tabBarLabel: () => null,
-          }}
-        />
-        <Tabs.Screen
-          name="convert"
-          options={{
-            title: 'Convert',
-            tabBarIcon: ({ color }) => <MaterialCommunityIcons name="swap-horizontal" color={color} size={24} />,
-          }}
-        />
-        <Tabs.Screen
-          name="atm"
-          options={{
-            title: 'ATM',
-            tabBarIcon: ({ color }) => <Ionicons name="navigate-outline" color={color} size={21} />,
-          }}
-        />
+        <Tabs.Screen name="index" options={{ title: 'Home', tabBarIcon: ({ color }) => <Ionicons name="menu-outline" color={color} size={22} /> }} />
+        <Tabs.Screen name="translate" options={{ title: 'Translate', tabBarIcon: ({ color }) => <Ionicons name="language-outline" color={color} size={21} /> }} />
+        <Tabs.Screen name="scan" options={{ title: '', tabBarIcon: ({ focused, color }) => <View style={[styles.scanTab, focused && styles.scanTabActive]}><MaterialCommunityIcons name="camera-iris" color={focused ? colors.navy950 : color} size={29} /></View>, tabBarLabel: () => null }} />
+        <Tabs.Screen name="convert" options={{ title: 'Convert', tabBarIcon: ({ color }) => <MaterialCommunityIcons name="swap-horizontal" color={color} size={24} /> }} />
+        <Tabs.Screen name="atm" options={{ title: 'ATM', tabBarIcon: ({ color }) => <Ionicons name="navigate-outline" color={color} size={21} /> }} />
         <Tabs.Screen name="sign-in" options={{ href: null }} />
+        <Tabs.Screen name="privacy" options={{ href: null }} />
+        <Tabs.Screen name="terms" options={{ href: null }} />
+        <Tabs.Screen name="cookies" options={{ href: null }} />
         <Tabs.Screen name="saved" options={{ href: null }} />
         <Tabs.Screen name="settings" options={{ href: null }} />
         <Tabs.Screen name="results" options={{ href: null }} />
