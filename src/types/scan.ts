@@ -17,6 +17,29 @@ export type DetectedPrice = {
   note?: string;
 };
 
+export type RebuiltMenuItem = {
+  id: string;
+  originalName: string;
+  englishName: string;
+  description?: string;
+  originalPrice: string;
+  convertedPrice: string;
+  icons: string[];
+};
+
+export type RebuiltMenuSection = {
+  title: string;
+  items: RebuiltMenuItem[];
+};
+
+export type RebuiltMenu = {
+  title: string;
+  subtitle: string;
+  sections: RebuiltMenuSection[];
+  itemCount: number;
+  note: string;
+};
+
 export type ScanRecord = {
   id: string;
   createdAt: string;
@@ -31,6 +54,7 @@ export type ScanRecord = {
   fxStatus?: 'live' | 'cached' | 'fallback' | 'failed';
   fxFetchedAt?: string;
   realCost?: RealCostEstimate;
+  rebuiltMenu?: RebuiltMenu;
 };
 
 export type OcrResult = {
