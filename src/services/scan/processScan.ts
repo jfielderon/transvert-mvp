@@ -11,6 +11,9 @@ type ProcessScanInput = {
   source: ScanRecord['source'];
   ocrStatus: ScanRecord['ocrStatus'];
   mode?: ScanMode;
+  ocrLines?: any[];
+  ocrQuality?: any;
+  ocrWarnings?: string[];
 };
 
 function cleanupOcrText(text: string) {
@@ -35,12 +38,27 @@ function cleanupOcrText(text: string) {
     .trim();
 }
 
+function cleanLines(lines: any[] = []) {
+  return lines
+    .filter((line) => typeof line?.text === 'string' && line.text.trim())
+    .slice(0, 120)
+    .map((line, index) => ({
+      id: String(line.id ?? `line-${index}`),
+      text: line.text.trim(),
+      box: line.box,
+      confidence: typeof line.confidence === 'number' ? line.confidence : undefined,
+    }));
+}
+
 export async function processScanInput(input: ProcessScanInput): Promise<ScanRecord> {
   const mode = input.mode ?? 'menu';
   const trimmed = cleanupOcrText(input.text);
+  const ocrLines = cleanLines(input.ocrLines);
   console.log('[scan:process] OCR cleanup lengths', {
     inputLength: input.text.length,
     trimmedLength: trimmed.length,
+    lineCount: ocrLines.length,
+    quality: input.ocrQuality,
   });
 
   if (!trimmed) throw new Error('Paste or enter text before processing.');
@@ -68,7 +86,7 @@ export async function processScanInput(input: ProcessScanInput): Promise<ScanRec
   );
   const marketTotal = mode === 'receipt' ? totalGbp(translatedItems) : 0;
 
-  return {
+  const record: any = {
     id: createId('scan'),
     createdAt: new Date().toISOString(),
     imageUri: input.imageUri,
@@ -82,5 +100,10 @@ export async function processScanInput(input: ProcessScanInput): Promise<ScanRec
     fxStatus: fx.status,
     fxFetchedAt: fx.fetchedAt ? new Date(fx.fetchedAt).toISOString() : undefined,
     realCost: estimateRealCost(translatedItems, marketTotal),
+    ocrLines,
+    ocrQuality: input.ocrQuality,
+    ocrWarnings: input.ocrWarnings ?? [],
   };
+
+  return record;
 }
