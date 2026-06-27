@@ -89,14 +89,9 @@ export default function RootLayout() {
             tabBarIcon: ({ color }) => <Ionicons name="navigate-outline" color={color} size={21} />,
           }}
         />
-        <Tabs.Screen
-          name="saved"
-          options={{ href: null }}
-        />
-        <Tabs.Screen
-          name="settings"
-          options={{ href: null }}
-        />
+        <Tabs.Screen name="sign-in" options={{ href: null }} />
+        <Tabs.Screen name="saved" options={{ href: null }} />
+        <Tabs.Screen name="settings" options={{ href: null }} />
         <Tabs.Screen name="results" options={{ href: null }} />
       </Tabs>
     </>
