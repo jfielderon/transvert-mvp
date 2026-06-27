@@ -6,7 +6,7 @@ import { ActivityIndicator, Image, Linking, Platform, Pressable, StyleSheet, Tex
 import { GlassCard } from '@/components/GlassCard';
 import { Screen } from '@/components/Screen';
 import { env } from '@/config/env';
-import { findNearbyAtms, formatDistance, type AtmLocation } from '@/services/atmService';
+import { findNearbyAtms, formatDistance, suggestAtmPlaces, type AtmLocation, type AtmPlaceSuggestion } from '@/services/atmService';
 import { colors } from '@/theme/colors';
 
 type AtmState = 'idle' | 'permission' | 'loading' | 'manual' | 'ready' | 'error';
@@ -26,6 +26,9 @@ export default function AtmScreen() {
   const [provider, setProvider] = useState('local');
   const [status, setStatus] = useState<AtmState>('permission');
   const [manualLocation, setManualLocation] = useState('');
+  const [selectedPlaceId, setSelectedPlaceId] = useState<string | null>(null);
+  const [suggestions, setSuggestions] = useState<AtmPlaceSuggestion[]>([]);
+  const [isSuggesting, setIsSuggesting] = useState(false);
   const [warning, setWarning] = useState('Fee data estimate / community data coming soon.');
   const [mapImageUrl, setMapImageUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -83,6 +86,8 @@ export default function AtmScreen() {
     setStatus('loading');
     setWarning('Finding nearby ATMs...');
     setError(null);
+    setSuggestions([]);
+    setSelectedPlaceId(null);
 
     try {
       const coords = await withTimeout(getDeviceLocation(), 'Location request timed out. Enter a location manually.');
@@ -95,14 +100,18 @@ export default function AtmScreen() {
     }
   };
 
-  const searchManualLocation = async () => {
-    if (!manualLocation.trim()) return;
+  const searchManualLocation = async (placeId = selectedPlaceId) => {
+    if (!manualLocation.trim() && !placeId) return;
     setStatus('loading');
     setWarning('Finding nearby ATMs...');
     setError(null);
+    setSuggestions([]);
 
     try {
-      const result = await withTimeout(findNearbyAtms({ query: manualLocation.trim() }), 'Manual ATM search timed out. Try a more specific location.');
+      const result = await withTimeout(
+        findNearbyAtms(placeId ? { placeId, query: manualLocation.trim() } : { query: manualLocation.trim() }),
+        'Manual ATM search timed out. Try a more specific location.'
+      );
       applyAtmResult(result);
     } catch (searchError) {
       setStatus('error');
@@ -111,9 +120,39 @@ export default function AtmScreen() {
     }
   };
 
+  const selectSuggestion = (suggestion: AtmPlaceSuggestion) => {
+    setManualLocation(suggestion.description);
+    setSelectedPlaceId(suggestion.placeId);
+    setSuggestions([]);
+    void searchManualLocation(suggestion.placeId);
+  };
+
   useEffect(() => {
     loadFromDeviceLocation();
   }, []);
+
+  useEffect(() => {
+    const query = manualLocation.trim();
+    if (selectedPlaceId || query.length < 2) {
+      setSuggestions([]);
+      return;
+    }
+
+    let cancelled = false;
+    setIsSuggesting(true);
+    const timeout = setTimeout(async () => {
+      const nextSuggestions = await suggestAtmPlaces(query);
+      if (!cancelled) {
+        setSuggestions(nextSuggestions);
+        setIsSuggesting(false);
+      }
+    }, 300);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timeout);
+    };
+  }, [manualLocation, selectedPlaceId]);
 
   return (
     <Screen>
@@ -165,19 +204,39 @@ export default function AtmScreen() {
       </View>
 
       <GlassCard style={styles.searchCard}>
-        <Text style={styles.label}>Manual location</Text>
+        <Text style={styles.label}>Search exact location</Text>
         <View style={styles.searchRow}>
           <TextInput
             value={manualLocation}
-            onChangeText={setManualLocation}
-            placeholder="Enter city, area, or postcode"
+            onChangeText={(value) => {
+              setManualLocation(value);
+              setSelectedPlaceId(null);
+            }}
+            placeholder="Type town, resort, hotel or postcode"
             placeholderTextColor={colors.dim}
             style={styles.searchInput}
+            autoCorrect={false}
+            returnKeyType="search"
+            onSubmitEditing={() => searchManualLocation()}
           />
-          <Pressable style={styles.searchButton} onPress={searchManualLocation}>
-            <Ionicons name="search-outline" color={colors.navy950} size={18} />
+          <Pressable style={styles.searchButton} onPress={() => searchManualLocation()}>
+            {isSuggesting ? <ActivityIndicator color={colors.navy950} size="small" /> : <Ionicons name="search-outline" color={colors.navy950} size={18} />}
           </Pressable>
         </View>
+        {suggestions.length > 0 && (
+          <View style={styles.suggestions}>
+            {suggestions.map((suggestion) => (
+              <Pressable key={suggestion.placeId} style={styles.suggestionRow} onPress={() => selectSuggestion(suggestion)}>
+                <Ionicons name="location-outline" color={colors.cyan} size={17} />
+                <View style={styles.suggestionTextBlock}>
+                  <Text style={styles.suggestionTitle}>{suggestion.title}</Text>
+                  {!!suggestion.subtitle && <Text style={styles.suggestionSubtitle}>{suggestion.subtitle}</Text>}
+                </View>
+              </Pressable>
+            ))}
+          </View>
+        )}
+        <Text style={styles.searchHelp}>Pick a suggestion for exact ATM results. This avoids wrong towns with the same name.</Text>
       </GlassCard>
 
       {error && <Text style={styles.errorText}>{error}</Text>}
@@ -215,253 +274,50 @@ export default function AtmScreen() {
 }
 
 const styles = StyleSheet.create({
-  topBar: {
-    paddingTop: 30,
-    marginBottom: 18,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  iconButton: {
-    width: 42,
-    height: 42,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: 21,
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
-  topTitle: {
-    color: colors.muted,
-    fontSize: 12,
-    fontWeight: '700',
-    letterSpacing: 2.4,
-    textTransform: 'uppercase',
-  },
-  header: {
-    marginBottom: 20,
-  },
-  eyebrow: {
-    color: colors.cyan,
-    fontSize: 10,
-    fontWeight: '700',
-    letterSpacing: 3,
-  },
-  title: {
-    marginTop: 12,
-    maxWidth: 330,
-    color: colors.text,
-    fontSize: 34,
-    fontWeight: '700',
-    lineHeight: 39,
-  },
-  map: {
-    height: 300,
-    overflow: 'hidden',
-    borderRadius: 22,
-    borderWidth: 1,
-    borderColor: 'rgba(103,232,249,0.14)',
-    backgroundColor: '#020713',
-  },
-  mapState: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 12,
-  },
-  mapStateText: {
-    color: colors.text,
-    fontWeight: '800',
-  },
-  mapImage: {
-    ...StyleSheet.absoluteFillObject,
-    opacity: 0.84,
-  },
-  gridLineA: {
-    position: 'absolute',
-    left: -40,
-    top: 110,
-    width: 520,
-    height: 1,
-    backgroundColor: colors.border,
-    transform: [{ rotate: '-22deg' }],
-  },
-  gridLineB: {
-    position: 'absolute',
-    left: 80,
-    top: -80,
-    width: 1,
-    height: 520,
-    backgroundColor: colors.border,
-    transform: [{ rotate: '32deg' }],
-  },
-  gridLineC: {
-    position: 'absolute',
-    right: 88,
-    top: -70,
-    width: 1,
-    height: 500,
-    backgroundColor: 'rgba(90,141,255,0.12)',
-    transform: [{ rotate: '-18deg' }],
-  },
-  pin: {
-    position: 'absolute',
-    width: 36,
-    height: 36,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: 18,
-    backgroundColor: colors.cyan,
-  },
-  pinText: {
-    color: colors.navy950,
-    fontSize: 13,
-    fontWeight: '900',
-  },
-  mapCard: {
-    position: 'absolute',
-    left: 18,
-    right: 18,
-    bottom: 18,
-    borderRadius: 18,
-    borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: 'rgba(2,7,19,0.88)',
-    padding: 16,
-  },
-  mapLabel: {
-    color: colors.cyan,
-    fontSize: 10,
-    fontWeight: '900',
-    letterSpacing: 2,
-    textTransform: 'uppercase',
-  },
-  mapTitle: {
-    marginTop: 8,
-    color: colors.text,
-    fontSize: 16,
-    fontWeight: '800',
-    lineHeight: 22,
-  },
-  mapMeta: {
-    marginTop: 7,
-    color: colors.dim,
-    fontSize: 12,
-  },
-  searchCard: {
-    marginTop: 16,
-  },
-  label: {
-    color: colors.dim,
-    fontSize: 10,
-    fontWeight: '900',
-    letterSpacing: 2.4,
-    textTransform: 'uppercase',
-  },
-  searchRow: {
-    flexDirection: 'row',
-    gap: 10,
-    marginTop: 12,
-  },
-  searchInput: {
-    flex: 1,
-    height: 48,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: colors.border,
-    color: colors.text,
-    paddingHorizontal: 14,
-  },
-  searchButton: {
-    width: 48,
-    height: 48,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: 24,
-    backgroundColor: colors.cyan,
-  },
-  allowButton: {
-    height: 48,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    borderRadius: 24,
-    backgroundColor: colors.cyan,
-    marginTop: 12,
-  },
-  allowText: {
-    color: colors.navy950,
-    fontWeight: '900',
-  },
-  errorText: {
-    marginTop: 12,
-    color: colors.danger,
-    fontSize: 13,
-    fontWeight: '700',
-    lineHeight: 19,
-  },
-  sectionTitle: {
-    marginTop: 24,
-    color: colors.text,
-    fontSize: 18,
-    fontWeight: '800',
-  },
-  list: {
-    gap: 10,
-    marginTop: 12,
-  },
-  atmCard: {
-    padding: 16,
-  },
-  atmHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    gap: 14,
-  },
-  atmTitleBlock: {
-    flex: 1,
-  },
-  atmName: {
-    color: colors.text,
-    fontSize: 16,
-    fontWeight: '800',
-  },
-  atmMeta: {
-    marginTop: 5,
-    color: colors.dim,
-    fontSize: 12,
-  },
-  fee: {
-    color: colors.cyan,
-    fontSize: 13,
-    fontWeight: '900',
-  },
-  feeWarning: {
-    color: colors.danger,
-  },
-  atmFooter: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    gap: 12,
-    borderTopWidth: 1,
-    borderTopColor: colors.border,
-    marginTop: 14,
-    paddingTop: 12,
-  },
-  risk: {
-    color: colors.muted,
-    fontSize: 12,
-  },
-  cardCompat: {
-    color: colors.cyan,
-    fontSize: 12,
-    fontWeight: '800',
-    textAlign: 'right',
-  },
-  feeData: {
-    marginTop: 10,
-    color: colors.dim,
-    fontSize: 11,
-  },
+  topBar: { paddingTop: 30, marginBottom: 18, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  iconButton: { width: 42, height: 42, alignItems: 'center', justifyContent: 'center', borderRadius: 21, borderWidth: 1, borderColor: colors.border },
+  topTitle: { color: colors.muted, fontSize: 12, fontWeight: '700', letterSpacing: 2.4, textTransform: 'uppercase' },
+  header: { marginBottom: 20 },
+  eyebrow: { color: colors.cyan, fontSize: 10, fontWeight: '700', letterSpacing: 3 },
+  title: { marginTop: 12, maxWidth: 330, color: colors.text, fontSize: 34, fontWeight: '700', lineHeight: 39 },
+  map: { height: 300, overflow: 'hidden', borderRadius: 22, borderWidth: 1, borderColor: 'rgba(103,232,249,0.14)', backgroundColor: '#020713' },
+  mapState: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12 },
+  mapStateText: { color: colors.text, fontWeight: '800' },
+  mapImage: { ...StyleSheet.absoluteFillObject, opacity: 0.84 },
+  gridLineA: { position: 'absolute', left: -40, top: 110, width: 520, height: 1, backgroundColor: colors.border, transform: [{ rotate: '-22deg' }] },
+  gridLineB: { position: 'absolute', left: 80, top: -80, width: 1, height: 520, backgroundColor: colors.border, transform: [{ rotate: '32deg' }] },
+  gridLineC: { position: 'absolute', right: 88, top: -70, width: 1, height: 500, backgroundColor: 'rgba(90,141,255,0.12)', transform: [{ rotate: '-18deg' }] },
+  pin: { position: 'absolute', width: 36, height: 36, alignItems: 'center', justifyContent: 'center', borderRadius: 18, backgroundColor: colors.cyan },
+  pinText: { color: colors.navy950, fontSize: 13, fontWeight: '900' },
+  mapCard: { position: 'absolute', left: 18, right: 18, bottom: 18, borderRadius: 18, borderWidth: 1, borderColor: colors.border, backgroundColor: 'rgba(2,7,19,0.88)', padding: 16 },
+  mapLabel: { color: colors.cyan, fontSize: 10, fontWeight: '900', letterSpacing: 2, textTransform: 'uppercase' },
+  mapTitle: { marginTop: 8, color: colors.text, fontSize: 16, fontWeight: '800', lineHeight: 22 },
+  mapMeta: { marginTop: 7, color: colors.dim, fontSize: 12 },
+  searchCard: { marginTop: 16 },
+  label: { color: colors.dim, fontSize: 10, fontWeight: '900', letterSpacing: 2.4, textTransform: 'uppercase' },
+  searchRow: { flexDirection: 'row', gap: 10, marginTop: 12 },
+  searchInput: { flex: 1, height: 48, borderRadius: 16, borderWidth: 1, borderColor: colors.border, color: colors.text, paddingHorizontal: 14 },
+  searchButton: { width: 48, height: 48, alignItems: 'center', justifyContent: 'center', borderRadius: 24, backgroundColor: colors.cyan },
+  suggestions: { marginTop: 10, borderWidth: 1, borderColor: colors.border, borderRadius: 16, overflow: 'hidden', backgroundColor: 'rgba(2,7,19,0.7)' },
+  suggestionRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 12, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: colors.border },
+  suggestionTextBlock: { flex: 1 },
+  suggestionTitle: { color: colors.text, fontSize: 14, fontWeight: '800' },
+  suggestionSubtitle: { marginTop: 3, color: colors.dim, fontSize: 12, fontWeight: '600' },
+  searchHelp: { marginTop: 10, color: colors.dim, fontSize: 11, lineHeight: 16 },
+  allowButton: { height: 48, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, borderRadius: 24, backgroundColor: colors.cyan, marginTop: 12 },
+  allowText: { color: colors.navy950, fontWeight: '900' },
+  errorText: { marginTop: 12, color: colors.danger, fontSize: 13, fontWeight: '700', lineHeight: 19 },
+  sectionTitle: { marginTop: 24, color: colors.text, fontSize: 18, fontWeight: '800' },
+  list: { gap: 10, marginTop: 12 },
+  atmCard: { padding: 16 },
+  atmHeader: { flexDirection: 'row', justifyContent: 'space-between', gap: 14 },
+  atmTitleBlock: { flex: 1 },
+  atmName: { color: colors.text, fontSize: 16, fontWeight: '800' },
+  atmMeta: { marginTop: 5, color: colors.dim, fontSize: 12 },
+  fee: { color: colors.cyan, fontSize: 13, fontWeight: '900' },
+  feeWarning: { color: colors.danger },
+  atmFooter: { flexDirection: 'row', justifyContent: 'space-between', gap: 12, borderTopWidth: 1, borderTopColor: colors.border, marginTop: 14, paddingTop: 12 },
+  risk: { flex: 1, color: colors.muted, fontSize: 12 },
+  cardCompat: { color: colors.cyan, fontSize: 12, fontWeight: '800', textAlign: 'right' },
+  feeData: { marginTop: 10, color: colors.dim, fontSize: 11 },
 });
