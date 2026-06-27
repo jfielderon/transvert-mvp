@@ -8,12 +8,13 @@ const CURRENCY_SYMBOLS = String.raw`\u20ac\u00a3$`;
 const LEADING_SYMBOL_PATTERN = new RegExp(String.raw`(?<symbol>[${CURRENCY_SYMBOLS}])\s*(?<amount>${AMOUNT})\b`, 'g');
 const TRAILING_SYMBOL_PATTERN = new RegExp(String.raw`\b(?<amount>${AMOUNT})\s*(?<symbol>[${CURRENCY_SYMBOLS}])`, 'g');
 const CODE_PATTERN = new RegExp(String.raw`\b(?:(?<code1>EUR|GBP|USD)\s*(?<amount1>${AMOUNT})|(?<amount2>${AMOUNT})\s*(?<code2>EUR|GBP|USD))\b`, 'gi');
-const BARE_MENU_LINE_PATTERN = new RegExp(String.raw`^(?<item>[^\d\n][^\n]{2,90}?)\s*(?:[|:•·\-–—]+\s*)?(?<amount>${AMOUNT})(?:\s*(?:GF|VG|V|VE|KCAL|CAL))?\s*$`, 'i');
+const BARE_MENU_LINE_PATTERN = new RegExp(String.raw`^(?<item>[^\d\n][^\n]{2,90}?)\s*(?:[|:•·\-–—]+\s*)?(?<amount>${AMOUNT})(?:\s*(?:GF|VG|VE|V|IV|IVG|GFIVG|KCAL|CAL)\b)?\s*$`, 'i');
+const MENU_LINE_PRICE_PATTERN = new RegExp(String.raw`^(?<item>[^\d\n][^\n]{2,90}?)\s+(?<amount>\d{1,2})(?:\s*(?:GF|VG|VE|V|IV|IVG|GFIVG))?\s*$`, 'i');
 
 function currencyFromToken(token: string): CurrencyCode {
   const upper = token.toUpperCase();
-  if (token === '\u20ac' || upper === 'EUR') return 'EUR';
-  if (token === '\u00a3' || upper === 'GBP') return 'GBP';
+  if (token === '€' || upper === 'EUR') return 'EUR';
+  if (token === '£' || upper === 'GBP') return 'GBP';
   return 'USD';
 }
 
@@ -41,9 +42,10 @@ function itemTextFor(context: string, rawPrice: string) {
     .replace(rawPrice, ' ')
     .replace(/\b(EUR|GBP|USD)\b/gi, ' ')
     .replace(/[€£$]/g, ' ')
-    .replace(/\b(GF|VG|VE|V)\b/g, ' ')
+    .replace(/\b(GF|VG|VE|V|IV|IVG|GFIVG)\b/gi, ' ')
     .replace(/\s{2,}/g, ' ')
     .replace(/\s+[-–—:|]\s*$/, '')
+    .replace(/[|:•·\-–—]+\s*$/, '')
     .trim();
 }
 
@@ -52,8 +54,9 @@ function sectionFor(text: string, start: number) {
   for (let index = before.length - 1; index >= 0; index -= 1) {
     const line = before[index];
     if (/[€£$]|\b(EUR|GBP|USD)\b/i.test(line)) continue;
+    if (/\d{1,2}\s*(GF|VG|VE|V|IV|IVG|GFIVG)?$/i.test(line)) continue;
     if (line.length > 42) continue;
-    if (/^[A-Z0-9 À-ÿ'&-]+$/.test(line) || /\b(menu|tapas|starters|mains|desserts|drinks|bebidas|postres|entrantes|appetizers)\b/i.test(line)) {
+    if (/^[A-Z0-9 À-ÿ'&-]+$/.test(line) || /\b(menu|tapas|starters|mains|desserts|drinks|bebidas|postres|entrantes|appetizers|calientes|frias|frías)\b/i.test(line)) {
       return line;
     }
   }
@@ -61,7 +64,7 @@ function sectionFor(text: string, start: number) {
 }
 
 function textLooksLikeMenu(text: string) {
-  return /\b(menu|tapas|raciones|bocadillo|paella|ensalada|gazpacho|queso|vino|cerveza|cafe|pizza|pasta|starter|main|dessert|plato|bebida|shrimp|calamari|croqueta|empanada|patatas|bravas|soup|salad|steak|pasta|burger)\b/i.test(text);
+  return /\b(menu|tapas|raciones|bocadillo|paella|ensalada|gazpacho|queso|vino|cerveza|agua|cafe|café|pizza|pasta|starter|main|dessert|plato|bebida|shrimp|calamari|croqueta|empanada|patatas|bravas|soup|salad|steak|pasta|burger)\b/i.test(text);
 }
 
 function shouldSkipLikelyOcrMergedAmount(amountRaw: string, amount: number, context: string, mode: ScanMode) {
@@ -69,10 +72,6 @@ function shouldSkipLikelyOcrMergedAmount(amountRaw: string, amount: number, cont
   if (/[,.]/.test(amountRaw)) return false;
   if (amount < 100 || amount > 999) return false;
   if (/\b(total|subtotal|importe|amount due|balance due|receipt|factura)\b/i.test(context)) return false;
-
-  // Google Vision can merge a divider or stray character with the real menu price,
-  // e.g. "I 24" -> "124". In menu mode, whole-number 100-999 values are much
-  // more likely to be OCR artefacts than genuine €124+ tapas prices.
   return true;
 }
 
@@ -143,7 +142,9 @@ function addBareMenuPrices(output: DetectedPrice[], occupied: Set<number>, text:
   if (mode !== 'menu' && !textLooksLikeMenu(text)) return;
 
   let offset = 0;
-  for (const line of text.split('\n')) {
+  const lines = text.split('\n');
+  for (let lineIndex = 0; lineIndex < lines.length; lineIndex += 1) {
+    const line = lines[lineIndex];
     const trimmed = line.trim().replace(/\s{2,}/g, ' ');
     const start = offset + line.indexOf(line.trim());
     offset += line.length + 1;
@@ -152,7 +153,7 @@ function addBareMenuPrices(output: DetectedPrice[], occupied: Set<number>, text:
     if (/[€£$]|\b(EUR|GBP|USD)\b/i.test(trimmed)) continue;
     if (/\b(phone|tel|vat|tax|address|street|open|closed|allerg|processing|credit card|debit card)\b/i.test(trimmed)) continue;
 
-    const match = BARE_MENU_LINE_PATTERN.exec(trimmed);
+    const match = BARE_MENU_LINE_PATTERN.exec(trimmed) ?? MENU_LINE_PRICE_PATTERN.exec(trimmed);
     const amountRaw = match?.groups?.amount;
     const item = match?.groups?.item?.trim();
     if (!amountRaw || !item) continue;
