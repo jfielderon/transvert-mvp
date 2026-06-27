@@ -1,5 +1,6 @@
 import { loadFxRates } from '@/services/fx';
 import { createId } from '@/services/ids';
+import { buildRebuiltMenu } from '@/services/menu/rebuildMenu';
 import { getLatestOcrMetadata } from '@/services/ocr/lastResult';
 import { detectPricesWithRates, totalGbp } from '@/services/priceParser';
 import { estimateRealCost } from '@/services/realCost';
@@ -132,6 +133,7 @@ export async function processScanInput(input: ProcessScanInput): Promise<ScanRec
     fxStatus: fx.status,
     fxFetchedAt: fx.fetchedAt ? new Date(fx.fetchedAt).toISOString() : undefined,
     realCost: estimateRealCost(translatedItems, marketTotal),
+    rebuiltMenu: mode === 'menu' ? buildRebuiltMenu(trimmed, translatedItems) : undefined,
     ocrLines,
     ocrQuality,
     ocrWarnings,
