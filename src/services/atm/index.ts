@@ -2,10 +2,19 @@ import type { AtmLocation, AtmSearchResult } from '@/services/atm/types';
 
 export type { AtmLocation, AtmSearchResult } from '@/services/atm/types';
 
+export type AtmPlaceSuggestion = {
+  id: string;
+  placeId: string;
+  title: string;
+  subtitle?: string;
+  description: string;
+};
+
 type AtmSearchInput = {
   latitude?: number;
   longitude?: number;
   query?: string;
+  placeId?: string;
 };
 
 const fallbackCenter = { latitude: 40.4168, longitude: -3.7038 };
@@ -73,6 +82,23 @@ function localFallback(error?: string): AtmSearchResult {
     warnings: ['Live ATM search is unavailable. Showing safe fallback estimates while the server API is checked.'],
     error,
   };
+}
+
+export async function suggestAtmPlaces(input: string): Promise<AtmPlaceSuggestion[]> {
+  const trimmed = input.trim();
+  if (trimmed.length < 2) return [];
+
+  try {
+    const response = await fetch('/api/place-suggestions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ input: trimmed }),
+    });
+    const payload = await response.json().catch(() => undefined) as { suggestions?: AtmPlaceSuggestion[] } | undefined;
+    return Array.isArray(payload?.suggestions) ? payload.suggestions : [];
+  } catch {
+    return [];
+  }
 }
 
 export async function findNearbyAtms(input: AtmSearchInput = {}): Promise<AtmSearchResult> {
