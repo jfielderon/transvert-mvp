@@ -10,6 +10,8 @@ import { saveScan } from '@/storage/scans';
 import { useScans } from '@/hooks/useScans';
 import { colors } from '@/theme/colors';
 
+const IMAGE_FRAME_HEIGHT = 260;
+
 function qualityFallback(text: string) {
   const words = text.split(/\s+/).filter(Boolean);
   const shortWords = words.filter((word) => word.length <= 2 && !/^\d+[,.]?\d*$/.test(word)).length;
@@ -22,6 +24,44 @@ function qualityFallback(text: string) {
   return { score, label: 'poor', reason: 'Retake closer, flatter and without glare.' };
 }
 
+function normalise(value: string) {
+  return value.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+}
+
+function scoreLineForPrice(line: any, price: any) {
+  const lineText = normalise(String(line?.text ?? ''));
+  const candidates = [price.itemText, price.context, price.raw, String(price.originalAmount ?? price.amount ?? '')]
+    .filter(Boolean)
+    .map((value) => normalise(String(value)));
+  let score = 0;
+  candidates.forEach((candidate) => {
+    if (!candidate) return;
+    if (lineText.includes(candidate) || candidate.includes(lineText)) score += 4;
+    candidate.split(' ').filter((part) => part.length > 2).forEach((part) => {
+      if (lineText.includes(part)) score += 1;
+    });
+  });
+  return score;
+}
+
+function buildOverlayItems(prices: any[], lines: any[], frameWidth: number) {
+  const boxedLines = lines.filter((line) => line?.box && Number.isFinite(line.box.x) && Number.isFinite(line.box.y));
+  const maxX = Math.max(1, ...boxedLines.map((line) => line.box.x + line.box.width));
+  const maxY = Math.max(1, ...boxedLines.map((line) => line.box.y + line.box.height));
+
+  return prices.slice(0, 6).map((price, index) => {
+    const bestLine = boxedLines
+      .map((line) => ({ line, score: scoreLineForPrice(line, price) }))
+      .sort((a, b) => b.score - a.score)[0];
+    const hasBox = Boolean(bestLine?.line?.box && bestLine.score > 0);
+    const box = bestLine?.line?.box;
+    const top = hasBox ? Math.min(IMAGE_FRAME_HEIGHT - 76, Math.max(8, (box.y / maxY) * IMAGE_FRAME_HEIGHT)) : 18 + index * 58;
+    const left = hasBox ? Math.min(frameWidth - 220, Math.max(10, (box.x / maxX) * frameWidth)) : index % 2 === 0 ? 14 : undefined;
+    const right = hasBox ? undefined : index % 2 === 1 ? 14 : undefined;
+    return { price, top, left, right, hasBox };
+  });
+}
+
 export default function ResultsScreen() {
   const { id } = useLocalSearchParams<{ id?: string }>();
   const { width } = useWindowDimensions();
@@ -31,6 +71,7 @@ export default function ResultsScreen() {
   const [overlayMode, setOverlayMode] = useState(true);
   const scan = useMemo(() => scans.find((item) => item.id === id), [id, scans]);
   const isWide = width >= 760;
+  const frameWidth = Math.max(280, Math.min(width - 48, 680));
 
   if (isLoading) {
     return (
@@ -52,11 +93,12 @@ export default function ResultsScreen() {
   const scanAny = scan as any;
   const translatedText = scan.translatedText ?? translateMenuText(scan.originalText);
   const shouldShowTotal = mode === 'receipt';
-  const overlayItems = scan.prices.slice(0, 4);
   const ocrQuality = scanAny.ocrQuality ?? qualityFallback(scan.originalText);
   const ocrLines = Array.isArray(scanAny.ocrLines) ? scanAny.ocrLines : [];
   const ocrWarnings = Array.isArray(scanAny.ocrWarnings) ? scanAny.ocrWarnings : [];
   const qualityTone = ocrQuality.label === 'poor' ? styles.qualityPoor : ocrQuality.label === 'fair' ? styles.qualityFair : styles.qualityGood;
+  const overlayItems = buildOverlayItems(scan.prices, ocrLines, frameWidth);
+  const trueOverlayCount = overlayItems.filter((item) => item.hasBox).length;
 
   const handleSave = async () => {
     await saveScan({ ...scan, translatedText });
@@ -114,8 +156,8 @@ export default function ResultsScreen() {
           <Image source={{ uri: scan.imageUri }} resizeMode="contain" style={styles.image} />
           {overlayMode && overlayItems.length > 0 && (
             <View pointerEvents="none" style={styles.overlayLayer}>
-              {overlayItems.map((price, index) => (
-                <View key={price.id} style={[styles.overlayChip, { top: 18 + index * 58, left: index % 2 === 0 ? 14 : undefined, right: index % 2 === 1 ? 14 : undefined }]}>
+              {overlayItems.map(({ price, top, left, right, hasBox }) => (
+                <View key={price.id} style={[styles.overlayChip, hasBox && styles.trueOverlayChip, { top, left, right }]}>
                   <Text style={styles.overlayOriginal} numberOfLines={1}>{price.itemText || price.context || 'Menu item'}</Text>
                   <Text style={styles.overlayEnglish} numberOfLines={1}>{price.translatedItemText || 'English translation'}</Text>
                   <Text style={styles.overlayPrice}>{formatCurrency(price.amount, price.currency)} ≈ {formatGbp(price.convertedGbp ?? 0)}</Text>
@@ -152,7 +194,7 @@ export default function ResultsScreen() {
         </View>
         <Text style={styles.qualityTitle}>{String(ocrQuality.label ?? 'unknown').toUpperCase()}</Text>
         <Text style={styles.qualityCopy}>{ocrQuality.reason ?? 'Scan quality estimate.'}</Text>
-        <Text style={styles.qualityMeta}>{ocrLines.length ? `${ocrLines.length} positioned text lines captured for true overlay.` : 'Bounding boxes unavailable for this scan. Retake after the new deployment for true overlay data.'}</Text>
+        <Text style={styles.qualityMeta}>{ocrLines.length ? `${ocrLines.length} positioned text lines captured. ${trueOverlayCount} menu overlays placed from OCR boxes.` : 'Bounding boxes unavailable for this scan. Retake after the new deployment for true overlay data.'}</Text>
         {ocrWarnings[0] && <Text style={styles.qualityWarning}>{ocrWarnings[0]}</Text>}
       </GlassCard>
 
@@ -216,7 +258,7 @@ export default function ResultsScreen() {
         )}
       </GlassCard>
 
-      <Text style={styles.disclaimer}>FX estimate only. True overlay uses OCR text boxes where available; poor OCR should be retaken.</Text>
+      <Text style={styles.disclaimer}>FX estimate only. Overlay uses OCR text boxes where available, with fallback placement when a menu row cannot be matched.</Text>
 
       {savedMessage && (
         <View style={styles.savedBanner}>
@@ -242,10 +284,11 @@ const styles = StyleSheet.create({
   topBar: { paddingTop: 30, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   iconButton: { width: 38, height: 38, alignItems: 'center', justifyContent: 'center', borderRadius: 19, borderWidth: 1, borderColor: colors.border },
   topTitle: { color: colors.muted, fontSize: 12, fontWeight: '900', letterSpacing: 4, textTransform: 'uppercase' },
-  imageFrame: { height: 260, overflow: 'hidden', borderRadius: 18, borderWidth: 1, borderColor: colors.border, backgroundColor: 'rgba(2,7,19,0.74)', marginTop: 24, position: 'relative' },
+  imageFrame: { height: IMAGE_FRAME_HEIGHT, overflow: 'hidden', borderRadius: 18, borderWidth: 1, borderColor: colors.border, backgroundColor: 'rgba(2,7,19,0.74)', marginTop: 24, position: 'relative' },
   image: { width: '100%', height: '100%' },
   overlayLayer: { ...StyleSheet.absoluteFillObject },
-  overlayChip: { position: 'absolute', maxWidth: '74%', borderRadius: 13, borderWidth: 1, borderColor: 'rgba(103,232,249,0.45)', backgroundColor: 'rgba(2,7,19,0.9)', paddingHorizontal: 10, paddingVertical: 8 },
+  overlayChip: { position: 'absolute', width: 205, maxWidth: '74%', borderRadius: 13, borderWidth: 1, borderColor: 'rgba(103,232,249,0.45)', backgroundColor: 'rgba(2,7,19,0.9)', paddingHorizontal: 10, paddingVertical: 8 },
+  trueOverlayChip: { borderColor: 'rgba(34,197,94,0.55)' },
   overlayOriginal: { color: colors.dim, fontSize: 10, fontWeight: '800' },
   overlayEnglish: { marginTop: 2, color: colors.text, fontSize: 13, fontWeight: '900' },
   overlayPrice: { marginTop: 3, color: colors.cyan, fontSize: 12, fontWeight: '900' },
