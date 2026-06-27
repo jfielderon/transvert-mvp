@@ -1,5 +1,6 @@
 import { loadFxRates } from '@/services/fx';
 import { createId } from '@/services/ids';
+import { getLatestOcrMetadata } from '@/services/ocr/lastResult';
 import { detectPricesWithRates, totalGbp } from '@/services/priceParser';
 import { estimateRealCost } from '@/services/realCost';
 import { localFallbackTranslate, translateText } from '@/services/translate';
@@ -66,13 +67,21 @@ function estimateTextQuality(text: string, lineCount: number) {
   return { score, label: 'poor', reason: 'OCR looks unreliable. Retake closer, flatter and without glare.' };
 }
 
+function matchingCachedMetadata(trimmed: string) {
+  const cached = getLatestOcrMetadata();
+  if (!cached?.text) return null;
+  return cleanupOcrText(cached.text) === trimmed ? cached : null;
+}
+
 export async function processScanInput(input: ProcessScanInput): Promise<ScanRecord> {
   const mode = input.mode ?? 'menu';
   const trimmed = cleanupOcrText(input.text);
-  const ocrLines = cleanLines(input.ocrLines);
-  const ocrQuality = input.ocrQuality ?? estimateTextQuality(trimmed, ocrLines.length);
+  const cached = input.source === 'manual' ? null : matchingCachedMetadata(trimmed);
+  const sourceLines = input.ocrLines?.length ? input.ocrLines : cached?.lines ?? [];
+  const ocrLines = cleanLines(sourceLines);
+  const ocrQuality = input.ocrQuality ?? cached?.quality ?? estimateTextQuality(trimmed, ocrLines.length);
   const ocrWarnings = [
-    ...(input.ocrWarnings ?? []),
+    ...(input.ocrWarnings ?? cached?.warnings ?? []),
     ocrQuality?.label === 'poor' ? ocrQuality.reason : undefined,
   ].filter(Boolean);
 
@@ -80,6 +89,7 @@ export async function processScanInput(input: ProcessScanInput): Promise<ScanRec
     inputLength: input.text.length,
     trimmedLength: trimmed.length,
     lineCount: ocrLines.length,
+    usingCachedBoxes: Boolean(cached?.lines?.length),
     quality: ocrQuality,
   });
 
