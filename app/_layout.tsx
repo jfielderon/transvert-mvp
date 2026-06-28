@@ -59,9 +59,6 @@ export default function RootLayout() {
         <Tabs.Screen name="privacy" options={{ href: null }} />
         <Tabs.Screen name="terms" options={{ href: null }} />
         <Tabs.Screen name="cookies" options={{ href: null }} />
-        <Tabs.Screen name="data-deletion" options={{ href: null }} />
-        <Tabs.Screen name="contact" options={{ href: null }} />
-        <Tabs.Screen name="about" options={{ href: null }} />
         <Tabs.Screen name="saved" options={{ href: null }} />
         <Tabs.Screen name="settings" options={{ href: null }} />
         <Tabs.Screen name="results" options={{ href: null }} />
