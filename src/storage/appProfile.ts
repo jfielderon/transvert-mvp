@@ -13,6 +13,11 @@ export type AppProfile = {
   accessToken?: string;
   refreshToken?: string;
   avatarUrl?: string;
+  homeCountry?: string;
+  defaultCard?: string;
+  preferredLanguage?: string;
+  preferredCurrency?: string;
+  onboardingComplete?: boolean;
 };
 
 export async function getAppProfile(): Promise<AppProfile | null> {
