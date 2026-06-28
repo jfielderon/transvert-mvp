@@ -1,14 +1,15 @@
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { GlassCard } from '@/components/GlassCard';
 import { PolicyFooter } from '@/components/PolicyFooter';
 import { Screen } from '@/components/Screen';
-import { saveAppProfile } from '@/storage/appProfile';
+import { completeRedirectSignIn, sendMagicLink, startOAuth, type AuthProvider } from '@/services/auth/supabaseAuth';
+import { getAppProfile, saveAppProfile } from '@/storage/appProfile';
 import { colors } from '@/theme/colors';
 
-type Provider = 'email' | 'google' | 'yahoo' | 'apple' | 'guest';
+type Provider = 'email' | AuthProvider | 'guest';
 
 function isValidEmail(value: string) {
   return /\S+@\S+\.\S+/.test(value.trim());
@@ -19,22 +20,51 @@ export default function SignInScreen() {
   const [updatesOptIn, setUpdatesOptIn] = useState(true);
   const [atmDataOptIn, setAtmDataOptIn] = useState(true);
   const [error, setError] = useState('');
+  const [message, setMessage] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  useEffect(() => {
+    (async () => {
+      const existing = await getAppProfile();
+      const profile = await completeRedirectSignIn(existing ?? undefined);
+      if (profile) router.replace('/');
+    })();
+  }, []);
 
   const continueWith = async (provider: Provider) => {
     const cleanContact = contact.trim().toLowerCase();
-    if (provider !== 'guest' && provider === 'email' && !isValidEmail(cleanContact)) {
-      setError('Enter your email so Transvert can save your scans and send your welcome note.');
-      return;
-    }
+    setError('');
+    setMessage('');
+    setIsSubmitting(true);
 
-    await saveAppProfile({
-      contact: provider === 'guest' ? '' : cleanContact,
-      provider: provider === 'apple' || provider === 'yahoo' ? 'email' : provider,
-      updatesOptIn,
-      atmDataOptIn,
-      createdAt: new Date().toISOString(),
-    });
-    router.replace('/scan');
+    try {
+      if (provider === 'guest') {
+        await saveAppProfile({
+          contact: '',
+          provider: 'guest',
+          updatesOptIn,
+          atmDataOptIn,
+          createdAt: new Date().toISOString(),
+        });
+        router.replace('/scan');
+        return;
+      }
+
+      if (provider === 'email') {
+        if (!isValidEmail(cleanContact)) throw new Error('Enter your email so Transvert can send your sign-in link.');
+        await saveAppProfile({ contact: cleanContact, provider: 'email', updatesOptIn, atmDataOptIn, createdAt: new Date().toISOString() });
+        await sendMagicLink(cleanContact);
+        setMessage('Check your email. We sent you a secure Transvert sign-in link.');
+        return;
+      }
+
+      await saveAppProfile({ contact: cleanContact, provider, updatesOptIn, atmDataOptIn, createdAt: new Date().toISOString() });
+      startOAuth(provider);
+    } catch (authError) {
+      setError(authError instanceof Error ? authError.message : 'Could not start sign-in.');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -42,14 +72,14 @@ export default function SignInScreen() {
       <View style={styles.hero}>
         <Text style={styles.eyebrow}>Transvert</Text>
         <Text style={styles.title}>See and know the world your way.</Text>
-        <Text style={styles.copy}>Translate menus, understand prices and help build better travel fee intelligence.</Text>
+        <Text style={styles.copy}>Sign in once to save your scans, settings and travel intelligence.</Text>
       </View>
 
       <GlassCard style={styles.card}>
         <Text style={styles.label}>Email</Text>
         <TextInput
           value={contact}
-          onChangeText={(value) => { setContact(value); setError(''); }}
+          onChangeText={(value) => { setContact(value); setError(''); setMessage(''); }}
           placeholder="you@example.com"
           placeholderTextColor={colors.dim}
           autoCapitalize="none"
@@ -57,27 +87,28 @@ export default function SignInScreen() {
           style={styles.input}
         />
         {error ? <Text style={styles.error}>{error}</Text> : null}
+        {message ? <Text style={styles.success}>{message}</Text> : null}
 
-        <Pressable style={styles.primary} onPress={() => continueWith('email')}>
-          <Text style={styles.primaryText}>Continue with email</Text>
+        <Pressable style={styles.primary} onPress={() => continueWith('email')} disabled={isSubmitting}>
+          <Text style={styles.primaryText}>{isSubmitting ? 'Working...' : 'Email me a sign-in link'}</Text>
         </Pressable>
 
         <View style={styles.socialGrid}>
-          <Pressable style={styles.socialButton} onPress={() => continueWith('google')}>
+          <Pressable style={styles.socialButton} onPress={() => continueWith('google')} disabled={isSubmitting}>
             <Ionicons name="logo-google" color={colors.text} size={18} />
             <Text style={styles.socialText}>Google</Text>
           </Pressable>
-          <Pressable style={styles.socialButton} onPress={() => continueWith('apple')}>
+          <Pressable style={styles.socialButton} onPress={() => continueWith('apple')} disabled={isSubmitting}>
             <Ionicons name="logo-apple" color={colors.text} size={20} />
             <Text style={styles.socialText}>Apple</Text>
           </Pressable>
-          <Pressable style={styles.socialButton} onPress={() => continueWith('yahoo')}>
+          <Pressable style={styles.socialButton} onPress={() => continueWith('yahoo')} disabled={isSubmitting}>
             <Text style={styles.yahooIcon}>Y!</Text>
             <Text style={styles.socialText}>Yahoo</Text>
           </Pressable>
         </View>
 
-        <Text style={styles.oauthNote}>Google, Apple and Yahoo buttons are ready for OAuth wiring. Email works for private testing.</Text>
+        <Text style={styles.oauthNote}>OAuth requires providers enabled in Supabase Auth and the Vercel URL added to redirect URLs.</Text>
 
         <View style={styles.consentBlock}>
           <Pressable style={styles.consentRow} onPress={() => setUpdatesOptIn((value) => !value)}>
@@ -110,6 +141,7 @@ const styles = StyleSheet.create({
   label: { color: colors.dim, fontSize: 11, fontWeight: '900', letterSpacing: 2, textTransform: 'uppercase' },
   input: { height: 54, borderRadius: 17, borderWidth: 1, borderColor: colors.border, color: colors.text, paddingHorizontal: 16, fontSize: 16, fontWeight: '700', backgroundColor: 'rgba(255,255,255,0.04)' },
   error: { color: colors.danger, fontSize: 12, fontWeight: '800' },
+  success: { color: colors.success, fontSize: 12, fontWeight: '800', lineHeight: 18 },
   primary: { height: 54, borderRadius: 27, backgroundColor: colors.cyan, alignItems: 'center', justifyContent: 'center' },
   primaryText: { color: colors.navy950, fontSize: 15, fontWeight: '900' },
   socialGrid: { flexDirection: 'row', gap: 8 },
