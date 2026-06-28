@@ -1,78 +1,122 @@
 import { Ionicons } from '@expo/vector-icons';
 import { router, useLocalSearchParams } from 'expo-router';
-import { useEffect, useMemo, useState } from 'react';
-import { Image, Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
+import { useMemo, useState } from 'react';
+import { Image, Pressable, StyleSheet, Text, View } from 'react-native';
 import { GlassCard } from '@/components/GlassCard';
 import { Screen } from '@/components/Screen';
-import { getCachedRate } from '@/services/fx';
 import { buildRebuiltMenu } from '@/services/menu/rebuildMenu';
-import { speakLocalPhrase } from '@/services/speech/speak';
 import { translateMenuText } from '@/services/translate';
 import { saveScanFeedback } from '@/services/userData';
-import { saveScan } from '@/storage/scans';
 import { useScans } from '@/hooks/useScans';
+import { saveScan } from '@/storage/scans';
 import { colors } from '@/theme/colors';
-
-function qualityFallback(text: string) {
-  const words = text.split(/\s+/).filter(Boolean);
-  let score = words.length < 12 ? 40 : 76;
-  score = Math.max(0, Math.min(100, score));
-  if (score >= 72) return { score, label: 'good', reason: 'Readable scan.' };
-  if (score >= 48) return { score, label: 'fair', reason: 'Usable scan, but check details.' };
-  return { score, label: 'poor', reason: 'Retake closer, flatter and without glare.' };
-}
 
 export default function ResultsScreen() {
   const { id } = useLocalSearchParams<{ id?: string }>();
-  const { width } = useWindowDimensions();
   const { scans, isLoading, refresh } = useScans();
-  const [savedMessage, setSavedMessage] = useState(false);
-  const [showRawOcr, setShowRawOcr] = useState(false);
   const [showOriginal, setShowOriginal] = useState(false);
-  const [imageLoadError, setImageLoadError] = useState(false);
-  const [spokenId, setSpokenId] = useState<string | null>(null);
+  const [showRaw, setShowRaw] = useState(false);
+  const [saved, setSaved] = useState(false);
   const [feedback, setFeedback] = useState<'right' | 'wrong' | null>(null);
   const scan = useMemo(() => scans.find((item) => item.id === id), [id, scans]);
-  const isWide = width >= 760;
 
-  useEffect(() => {
-    refresh();
-  }, [id, refresh]);
+  if (isLoading) return <Screen><Text style={styles.title}>Loading scan...</Text></Screen>;
+  if (!scan) return <Screen><Text style={styles.title}>Result loading...</Text><Text style={styles.copy}>Try refreshing, or scan again.</Text><Pressable style={styles.primary} onPress={refresh}><Text style={styles.primaryText}>Refresh result</Text></Pressable><Pressable style={styles.secondary} onPress={() => router.replace('/scan')}><Text style={styles.secondaryText}>Scan again</Text></Pressable></Screen>;
 
-  if (isLoading) return <Screen><Text style={styles.loading}>Loading scan...</Text></Screen>;
-  if (!scan) {
-    return (
-      <Screen>
-        <Text style={styles.loading}>Result loading...</Text>
-        <Text style={styles.copy}>The result may still be saving. Try refreshing, or scan again if it does not appear.</Text>
-        <Pressable style={styles.primaryActionSingle} onPress={refresh}><Text style={styles.primaryText}>Refresh result</Text></Pressable>
-        <Pressable style={styles.secondaryActionSingle} onPress={() => router.replace('/scan')}><Text style={styles.secondaryText}>Scan again</Text></Pressable>
-      </Screen>
-    );
-  }
-
-  const mode = scan.mode ?? 'menu';
-  const scanAny = scan as any;
   const translatedText = scan.translatedText ?? translateMenuText(scan.originalText);
-  const ocrQuality = scanAny.ocrQuality ?? qualityFallback(scan.originalText);
-  const ocrLines = Array.isArray(scanAny.ocrLines) ? scanAny.ocrLines : [];
-  const rebuiltMenu = scan.rebuiltMenu ?? (mode === 'menu' ? buildRebuiltMenu(scan.originalText, scan.prices) : undefined);
-  const qualityTone = ocrQuality.label === 'poor' ? styles.qualityPoor : ocrQuality.label === 'fair' ? styles.qualityFair : styles.qualityGood;
+  const menu = scan.rebuiltMenu ?? buildRebuiltMenu(scan.originalText, scan.prices);
 
-  const handleSave = async () => {
-    await saveScan({ ...scan, translatedText, rebuiltMenu, userFeedback: feedback } as any);
-    await refresh();
-    setSavedMessage(true);
+  const save = async () => {
+    await saveScan({ ...scan, translatedText, rebuiltMenu: menu } as any);
+    setSaved(true);
   };
 
-  const handleFeedback = async (verdict: 'right' | 'wrong') => {
+  const mark = async (verdict: 'right' | 'wrong') => {
     setFeedback(verdict);
-    await saveScanFeedback({ scanId: scan.id, verdict, mode, originalText: scan.originalText, detectedPriceCount: scan.prices.length });
-    await saveScan({ ...scan, translatedText, rebuiltMenu, userFeedback: verdict } as any);
+    await saveScanFeedback({ scanId: scan.id, verdict, mode: scan.mode ?? 'menu', originalText: scan.originalText, detectedPriceCount: scan.prices.length });
+    await saveScan({ ...scan, translatedText, rebuiltMenu: menu, userFeedback: verdict } as any);
   };
 
-  const speakItem = (item: any) => {
-    setSpokenId(item.id);
-    speakLocalPhrase(`${item.originalName}, por favor`, 'es-ES');
-    setTimeout(() => setSpokenId(null), 1600);
-  };
+  return (
+    <Screen>
+      <View style={styles.topBar}>
+        <Pressable style={styles.iconButton} onPress={() => router.back()}><Ionicons name="chevron-back" color={colors.text} size={20} /></Pressable>
+        <Text style={styles.topTitle}>Smart Upload</Text>
+        <View style={styles.iconButton}><Ionicons name="restaurant-outline" color={colors.text} size={18} /></View>
+      </View>
+
+      {scan.imageUri ? <View style={styles.imageFrame}><Image source={{ uri: scan.imageUri }} resizeMode="contain" style={styles.image} /></View> : null}
+      {scan.imageUri ? <View style={styles.toggleRow}><Pressable style={[styles.toggleButton, !showOriginal && styles.toggleActive]} onPress={() => setShowOriginal(false)}><Text style={[styles.toggleText, !showOriginal && styles.toggleTextActive]}>Your menu</Text></Pressable><Pressable style={[styles.toggleButton, showOriginal && styles.toggleActive]} onPress={() => setShowOriginal(true)}><Text style={[styles.toggleText, showOriginal && styles.toggleTextActive]}>Original</Text></Pressable></View> : null}
+
+      {showOriginal && scan.imageUri ? (
+        <GlassCard style={styles.card}><Text style={styles.label}>Original</Text><Image source={{ uri: scan.imageUri }} resizeMode="contain" style={styles.originalImage} /></GlassCard>
+      ) : (
+        <>
+          <View style={styles.hero}><Text style={styles.label}>Menu rebuilt</Text><Text style={styles.title}>Read it your way.</Text><Text style={styles.copy}>{scan.prices.length} prices detected. GBP estimates only.</Text></View>
+          <GlassCard style={styles.card}>
+            <View style={styles.menuHeader}><View style={{ flex: 1 }}><Text style={styles.label}>Translated restaurant menu</Text><Text style={styles.menuTitle}>{menu?.title ?? 'Menu'}</Text></View><View style={styles.countPill}><Text style={styles.count}>{menu?.itemCount ?? scan.prices.length}</Text><Text style={styles.countLabel}>items</Text></View></View>
+            {menu?.sections?.length ? menu.sections.map((section) => <View key={section.title} style={styles.section}><Text style={styles.sectionTitle}>{section.title}</Text>{section.items.map((item) => <View key={item.id} style={styles.item}><View style={styles.itemTop}><View style={{ flex: 1 }}><Text style={styles.englishName}>{item.englishName}</Text><Text style={styles.originalName}>{item.originalName}</Text></View><View style={styles.priceStack}><Text style={styles.convertedPrice}>{item.convertedPrice}</Text><Text style={styles.originalPrice}>{item.originalPrice}</Text></View></View>{item.description ? <Text style={styles.description}>{item.description}</Text> : null}{item.icons.length ? <Text style={styles.icons}>{item.icons.join('  ')}</Text> : null}</View>)}</View>) : <Text style={styles.copy}>No menu items detected. Try a clearer upload.</Text>}
+          </GlassCard>
+        </>
+      )}
+
+      <GlassCard style={styles.card}><Text style={styles.label}>Was this useful?</Text><View style={styles.feedbackRow}><Pressable style={[styles.feedbackButton, feedback === 'right' && styles.feedbackActive]} onPress={() => mark('right')}><Text style={[styles.feedbackText, feedback === 'right' && styles.feedbackTextActive]}>Looks right</Text></Pressable><Pressable style={[styles.feedbackButton, feedback === 'wrong' && styles.feedbackActive]} onPress={() => mark('wrong')}><Text style={[styles.feedbackText, feedback === 'wrong' && styles.feedbackTextActive]}>Needs fixing</Text></Pressable></View><Text style={styles.copy}>{feedback ? 'Thanks — feedback saved.' : 'Tester feedback improves Transvert.'}</Text></GlassCard>
+      <GlassCard style={styles.card}><Pressable style={styles.rawHeader} onPress={() => setShowRaw(!showRaw)}><Text style={styles.label}>View raw OCR</Text><Ionicons name={showRaw ? 'chevron-up' : 'chevron-down'} color={colors.dim} size={18} /></Pressable>{showRaw ? <><Text style={styles.rawSubhead}>Original OCR</Text><Text style={styles.body}>{scan.originalText}</Text><Text style={styles.rawSubhead}>English translation</Text><Text style={styles.body}>{translatedText}</Text></> : null}</GlassCard>
+      <Text style={styles.disclaimer}>FX, translations and allergens are estimates. Confirm final prices with the restaurant.</Text>
+      {saved ? <Text style={styles.saved}>Scan saved</Text> : null}
+      <View style={styles.actions}><Pressable style={styles.secondaryAction} onPress={save}><Text style={styles.secondaryText}>Save scan</Text></Pressable><Pressable style={styles.primaryAction} onPress={() => router.replace('/scan')}><Text style={styles.primaryText}>Scan again</Text></Pressable></View>
+    </Screen>
+  );
+}
+
+const styles = StyleSheet.create({
+  topBar: { paddingTop: 30, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  iconButton: { width: 38, height: 38, alignItems: 'center', justifyContent: 'center', borderRadius: 19, borderWidth: 1, borderColor: colors.border },
+  topTitle: { color: colors.muted, fontSize: 12, fontWeight: '900', letterSpacing: 4, textTransform: 'uppercase' },
+  imageFrame: { height: 240, borderRadius: 18, borderWidth: 1, borderColor: colors.border, marginTop: 24, overflow: 'hidden' },
+  image: { width: '100%', height: '100%' },
+  originalImage: { width: '100%', height: 500, marginTop: 14 },
+  toggleRow: { flexDirection: 'row', gap: 8, marginTop: 12 },
+  toggleButton: { flex: 1, borderRadius: 16, borderWidth: 1, borderColor: colors.border, paddingVertical: 11, alignItems: 'center' },
+  toggleActive: { backgroundColor: colors.cyan, borderColor: colors.cyan },
+  toggleText: { color: colors.muted, fontWeight: '900' },
+  toggleTextActive: { color: colors.navy950 },
+  hero: { marginTop: 22 },
+  label: { color: colors.dim, fontSize: 10, fontWeight: '900', letterSpacing: 2.4, textTransform: 'uppercase' },
+  title: { marginTop: 8, color: colors.text, fontSize: 34, fontWeight: '900' },
+  copy: { marginTop: 8, color: colors.muted, fontSize: 14, lineHeight: 21 },
+  card: { marginTop: 12 },
+  menuHeader: { flexDirection: 'row', gap: 14 },
+  menuTitle: { marginTop: 8, color: colors.text, fontSize: 28, fontWeight: '900' },
+  countPill: { minWidth: 62, borderRadius: 18, borderWidth: 1, borderColor: colors.border, padding: 10, alignItems: 'center' },
+  count: { color: colors.cyan, fontSize: 22, fontWeight: '900' },
+  countLabel: { color: colors.dim, fontSize: 10, fontWeight: '900' },
+  section: { marginTop: 22 },
+  sectionTitle: { color: colors.cyan, fontSize: 12, fontWeight: '900', letterSpacing: 2, textTransform: 'uppercase', borderBottomWidth: 1, borderBottomColor: colors.border, paddingBottom: 8 },
+  item: { paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: colors.border },
+  itemTop: { flexDirection: 'row', gap: 12 },
+  englishName: { color: colors.text, fontSize: 18, fontWeight: '900' },
+  originalName: { marginTop: 4, color: colors.dim, fontSize: 12, fontWeight: '800' },
+  priceStack: { alignItems: 'flex-end', minWidth: 76 },
+  convertedPrice: { color: colors.cyan, fontSize: 17, fontWeight: '900' },
+  originalPrice: { marginTop: 5, color: colors.text, fontSize: 12, fontWeight: '800' },
+  description: { marginTop: 8, color: colors.muted, fontSize: 14, lineHeight: 20 },
+  icons: { marginTop: 10, fontSize: 16 },
+  feedbackRow: { flexDirection: 'row', gap: 10, marginTop: 12 },
+  feedbackButton: { flex: 1, height: 42, alignItems: 'center', justifyContent: 'center', borderRadius: 21, borderWidth: 1, borderColor: colors.border },
+  feedbackActive: { backgroundColor: colors.cyan, borderColor: colors.cyan },
+  feedbackText: { color: colors.cyan, fontWeight: '900' },
+  feedbackTextActive: { color: colors.navy950 },
+  rawHeader: { flexDirection: 'row', justifyContent: 'space-between' },
+  rawSubhead: { marginTop: 14, color: colors.cyan, fontWeight: '900' },
+  body: { marginTop: 10, color: colors.text, fontSize: 16, lineHeight: 25 },
+  disclaimer: { marginTop: 14, color: colors.dim, fontSize: 12, lineHeight: 18 },
+  saved: { marginTop: 14, color: colors.success, fontWeight: '900' },
+  actions: { flexDirection: 'row', gap: 10, marginTop: 24, marginBottom: 110 },
+  secondaryAction: { flex: 1, height: 50, alignItems: 'center', justifyContent: 'center', borderRadius: 25, borderWidth: 1, borderColor: colors.border },
+  secondary: { marginTop: 12, height: 50, alignItems: 'center', justifyContent: 'center', borderRadius: 25, borderWidth: 1, borderColor: colors.border },
+  secondaryText: { color: colors.text, fontWeight: '800' },
+  primaryAction: { flex: 1, height: 50, alignItems: 'center', justifyContent: 'center', borderRadius: 25, backgroundColor: colors.cyan },
+  primary: { marginTop: 22, height: 50, alignItems: 'center', justifyContent: 'center', borderRadius: 25, backgroundColor: colors.cyan },
+  primaryText: { color: colors.navy950, fontWeight: '900' },
+});
