@@ -55,6 +55,7 @@ export default function RootLayout() {
         <Tabs.Screen name="convert" options={{ title: 'Convert', tabBarIcon: ({ color }) => <MaterialCommunityIcons name="swap-horizontal" color={color} size={24} /> }} />
         <Tabs.Screen name="atm" options={{ title: 'ATM', tabBarIcon: ({ color }) => <Ionicons name="navigate-outline" color={color} size={21} /> }} />
         <Tabs.Screen name="sign-in" options={{ href: null }} />
+        <Tabs.Screen name="onboarding" options={{ href: null }} />
         <Tabs.Screen name="privacy" options={{ href: null }} />
         <Tabs.Screen name="terms" options={{ href: null }} />
         <Tabs.Screen name="cookies" options={{ href: null }} />
