@@ -28,29 +28,23 @@ export default function HomeScreen() {
   }, []);
 
   const firstName = firstNameFromProfile(profile);
+  const signedIn = Boolean(profile?.contact && profile.provider !== 'guest');
+  const route = signedIn ? (profile?.onboardingComplete ? '/scan' : '/onboarding') : '/sign-in';
 
   return (
     <Screen>
       <View style={styles.header}>
         <View style={styles.brandLockup}>
-          <View style={styles.brandMark}>
-            <Text style={styles.markText}>T</Text>
-          </View>
-          <View>
-            <Text style={styles.brand}>Transvert</Text>
-            {firstName ? <Text style={styles.greeting}>Hi, {firstName}</Text> : null}
-          </View>
+          <View style={styles.brandMark}><Text style={styles.markText}>T</Text></View>
+          <View><Text style={styles.brand}>Transvert</Text>{firstName ? <Text style={styles.greeting}>Hi, {firstName}</Text> : null}</View>
         </View>
         <View style={styles.headerActions}>
-          <Pressable style={styles.signInButton} onPress={() => router.push('/sign-in')}>
-            <Text style={styles.signInText}>{firstName ? 'Profile' : 'Sign in'}</Text>
-          </Pressable>
-          <Pressable style={styles.headerIcon} onPress={() => router.push('/settings')}>
-            <Ionicons name="settings-outline" color={colors.muted} size={18} />
-          </Pressable>
+          <Pressable style={styles.signInButton} onPress={() => router.push(signedIn ? '/settings' : '/sign-in')}><Text style={styles.signInText}>{signedIn ? 'Profile' : 'Sign in'}</Text></Pressable>
+          <Pressable style={styles.headerIcon} onPress={() => router.push('/settings')}><Ionicons name="settings-outline" color={colors.muted} size={18} /></Pressable>
         </View>
       </View>
-
+      {!signedIn ? <Pressable style={styles.prompt} onPress={() => router.push('/sign-in')}><Text style={styles.promptTitle}>Save your scans before you start</Text><Text style={styles.promptCopy}>Create your free Transvert profile so menus and settings stay with you.</Text></Pressable> : null}
+      {signedIn && !profile?.onboardingComplete ? <Pressable style={styles.prompt} onPress={() => router.push('/onboarding')}><Text style={styles.promptTitle}>Complete account setup</Text><Text style={styles.promptCopy}>Choose country, currency and default travel card.</Text></Pressable> : null}
       <View style={styles.hero}>
         <GlobalBackdrop />
         <View style={styles.heroCopy}>
@@ -58,51 +52,14 @@ export default function HomeScreen() {
           <Text style={styles.title}>SEE IT. SCAN IT. KNOW IT.</Text>
           <Text style={styles.subtitle}>{firstName ? `Ready for your next trip, ${firstName}?` : 'Understand what you are buying anywhere in the world.'}</Text>
         </View>
-        <Pressable style={styles.scanButton} onPress={() => router.push('/scan')}>
-          <LinearGradient colors={[colors.cyan, '#b7f7ff']} style={styles.scanButtonFill}>
-            <MaterialCommunityIcons name="camera-iris" color={colors.navy950} size={25} />
-            <Text style={styles.scanButtonText}>Scan now</Text>
-          </LinearGradient>
-        </Pressable>
+        <Pressable style={styles.scanButton} onPress={() => router.push(route)}><LinearGradient colors={[colors.cyan, '#b7f7ff']} style={styles.scanButtonFill}><MaterialCommunityIcons name="camera-iris" color={colors.navy950} size={25} /><Text style={styles.scanButtonText}>{signedIn ? 'Scan now' : 'Sign in to scan'}</Text></LinearGradient></Pressable>
       </View>
-
-      <View style={styles.intelligenceStrip}>
-        {intelligence.map((item) => (
-          <View key={item.label} style={styles.signal}>
-            <Ionicons name={item.icon} color={colors.cyan} size={17} />
-            <Text style={styles.signalLabel}>{item.label}</Text>
-            <Text style={styles.signalValue}>{item.value}</Text>
-          </View>
-        ))}
-      </View>
-
+      <View style={styles.intelligenceStrip}>{intelligence.map((item) => <View key={item.label} style={styles.signal}><Ionicons name={item.icon} color={colors.cyan} size={17} /><Text style={styles.signalLabel}>{item.label}</Text><Text style={styles.signalValue}>{item.value}</Text></View>)}</View>
       <View style={styles.commandGrid}>
-        <Pressable style={styles.command} onPress={() => router.push('/translate')}>
-          <Ionicons name="language-outline" color={colors.text} size={21} />
-          <View style={styles.commandText}>
-            <Text style={styles.commandLabel}>Translate</Text>
-            <Text style={styles.commandMeta}>Menus, signs, receipts</Text>
-          </View>
-          <Ionicons name="arrow-forward" color={colors.dim} size={16} />
-        </Pressable>
-        <Pressable style={styles.command} onPress={() => router.push('/convert')}>
-          <MaterialCommunityIcons name="swap-horizontal" color={colors.text} size={23} />
-          <View style={styles.commandText}>
-            <Text style={styles.commandLabel}>Convert</Text>
-            <Text style={styles.commandMeta}>Live-rate travel pricing</Text>
-          </View>
-          <Ionicons name="arrow-forward" color={colors.dim} size={16} />
-        </Pressable>
-        <Pressable style={styles.command} onPress={() => router.push('/atm')}>
-          <Ionicons name="navigate-outline" color={colors.text} size={21} />
-          <View style={styles.commandText}>
-            <Text style={styles.commandLabel}>ATM Finder</Text>
-            <Text style={styles.commandMeta}>Low-fee routing layer</Text>
-          </View>
-          <Ionicons name="arrow-forward" color={colors.dim} size={16} />
-        </Pressable>
+        <Pressable style={styles.command} onPress={() => router.push(signedIn ? '/translate' : '/sign-in')}><Ionicons name="language-outline" color={colors.text} size={21} /><View style={styles.commandText}><Text style={styles.commandLabel}>Translate</Text><Text style={styles.commandMeta}>Menus, signs, receipts</Text></View><Ionicons name="arrow-forward" color={colors.dim} size={16} /></Pressable>
+        <Pressable style={styles.command} onPress={() => router.push(signedIn ? '/convert' : '/sign-in')}><MaterialCommunityIcons name="swap-horizontal" color={colors.text} size={23} /><View style={styles.commandText}><Text style={styles.commandLabel}>Convert</Text><Text style={styles.commandMeta}>Live-rate travel pricing</Text></View><Ionicons name="arrow-forward" color={colors.dim} size={16} /></Pressable>
+        <Pressable style={styles.command} onPress={() => router.push(signedIn ? '/atm' : '/sign-in')}><Ionicons name="navigate-outline" color={colors.text} size={21} /><View style={styles.commandText}><Text style={styles.commandLabel}>ATM Finder</Text><Text style={styles.commandMeta}>Low-fee routing layer</Text></View><Ionicons name="arrow-forward" color={colors.dim} size={16} /></Pressable>
       </View>
-
       <PolicyFooter />
     </Screen>
   );
@@ -119,12 +76,15 @@ const styles = StyleSheet.create({
   brand: { color: colors.text, fontSize: 19, fontWeight: '700' },
   greeting: { marginTop: 2, color: colors.cyan, fontSize: 12, fontWeight: '800' },
   headerIcon: { width: 38, height: 38, alignItems: 'center', justifyContent: 'center', borderRadius: 19, borderWidth: 1, borderColor: colors.border },
+  prompt: { marginTop: 16, borderRadius: 18, borderWidth: 1, borderColor: colors.border, backgroundColor: 'rgba(103,232,249,0.08)', padding: 14 },
+  promptTitle: { color: colors.text, fontSize: 15, fontWeight: '900' },
+  promptCopy: { marginTop: 5, color: colors.muted, fontSize: 12, lineHeight: 18 },
   hero: { minHeight: 486, justifyContent: 'flex-end', overflow: 'hidden', marginHorizontal: -22, marginTop: 12, paddingHorizontal: 22, paddingBottom: 24 },
   heroCopy: { maxWidth: 330 },
   eyebrow: { color: colors.cyan, fontSize: 10, fontWeight: '700', letterSpacing: 2.8 },
   title: { marginTop: 18, color: colors.text, fontSize: 56, fontWeight: '800', lineHeight: 58 },
   subtitle: { marginTop: 18, maxWidth: 285, color: colors.muted, fontSize: 16, lineHeight: 24 },
-  scanButton: { marginTop: 28, width: 176, height: 54, borderRadius: 27, shadowColor: colors.cyan, shadowOpacity: 0.36, shadowRadius: 22 },
+  scanButton: { marginTop: 28, width: 192, height: 54, borderRadius: 27, shadowColor: colors.cyan, shadowOpacity: 0.36, shadowRadius: 22 },
   scanButtonFill: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 9, borderRadius: 27 },
   scanButtonText: { color: colors.navy950, fontSize: 15, fontWeight: '800' },
   intelligenceStrip: { flexDirection: 'row', gap: 8, marginTop: 8 },
