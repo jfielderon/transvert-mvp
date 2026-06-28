@@ -22,16 +22,21 @@ function appRedirectUrl() {
   return 'transvert://sign-in';
 }
 
+function publicKey() {
+  return env.supabaseAnonKey ?? '';
+}
+
 function headers(accessToken?: string) {
+  const key = publicKey();
   return {
-    apikey: env.supabaseAnonKey ?? '',
-    Authorization: accessToken ? `Bearer ${accessToken}` : `Bearer ${env.supabaseAnonKey ?? ''}`,
+    apikey: key,
+    Authorization: accessToken ? `Bearer ${accessToken}` : `Bearer ${key}`,
     'Content-Type': 'application/json',
   };
 }
 
 export function hasAuthConfig() {
-  return Boolean(env.supabaseUrl && env.supabaseAnonKey);
+  return Boolean(env.supabaseUrl && publicKey());
 }
 
 export async function sendMagicLink(email: string) {
@@ -50,8 +55,15 @@ export async function sendMagicLink(email: string) {
   });
 
   if (!response.ok) {
-    const payload = await response.json().catch(() => ({}));
-    throw new Error(payload?.msg ?? payload?.error_description ?? 'Could not send sign-in email.');
+    const text = await response.text().catch(() => '');
+    let message = 'Could not send sign-in email.';
+    try {
+      const payload = JSON.parse(text);
+      message = payload?.msg ?? payload?.message ?? payload?.error_description ?? payload?.error ?? message;
+    } catch {
+      if (text) message = text;
+    }
+    throw new Error(message);
   }
 
   return true;
@@ -59,7 +71,11 @@ export async function sendMagicLink(email: string) {
 
 export function startOAuth(provider: AuthProvider) {
   if (!hasAuthConfig()) throw new Error('Supabase Auth is not configured yet.');
-  const params = new URLSearchParams({ provider, redirect_to: appRedirectUrl() });
+  const params = new URLSearchParams({
+    provider,
+    redirect_to: appRedirectUrl(),
+    apikey: publicKey(),
+  });
   const url = `${authBase()}/authorize?${params.toString()}`;
   if (typeof window !== 'undefined') {
     window.location.href = url;
