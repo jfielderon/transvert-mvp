@@ -1,99 +1,194 @@
-import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
-import { LinearGradient } from 'expo-linear-gradient';
+import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { useEffect, useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
-import { GlobalBackdrop } from '@/components/GlobalBackdrop';
+import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { GlassCard } from '@/components/GlassCard';
 import { PolicyFooter } from '@/components/PolicyFooter';
 import { Screen } from '@/components/Screen';
-import { completeRedirectSignIn, firstNameFromProfile } from '@/services/auth/supabaseAuth';
-import { getAppProfile, type AppProfile } from '@/storage/appProfile';
+import { completeRedirectSignIn, firstNameFromProfile, sendMagicLink, startOAuth, type AuthProvider } from '@/services/auth/supabaseAuth';
+import { sendWelcomeAfterAuth } from '@/services/auth/welcomeAfterAuth';
+import { getAppProfile, saveAppProfile, type AppProfile } from '@/storage/appProfile';
 import { colors } from '@/theme/colors';
 
-const intelligence = [
-  { label: 'Live FX', value: 'EUR to GBP', icon: 'trending-up-outline' },
-  { label: 'OCR ready', value: 'Upload or paste', icon: 'scan-outline' },
-  { label: 'Low-fee ATM', value: 'Map prepared', icon: 'navigate-outline' },
-] as const;
+type Provider = 'email' | AuthProvider | 'guest';
 
-export default function HomeScreen() {
+function isValidEmail(value: string) {
+  return /\S+@\S+\.\S+/.test(value.trim());
+}
+
+function nextRoute(profile: AppProfile | null) {
+  if (!profile?.contact || profile.provider === 'guest') return '/onboarding';
+  return profile.onboardingComplete ? '/scan' : '/onboarding';
+}
+
+export default function EntryScreen() {
   const [profile, setProfile] = useState<AppProfile | null>(null);
+  const [contact, setContact] = useState('');
+  const [updatesOptIn, setUpdatesOptIn] = useState(true);
+  const [atmDataOptIn, setAtmDataOptIn] = useState(true);
+  const [error, setError] = useState('');
+  const [message, setMessage] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   useEffect(() => {
     (async () => {
       const existing = await getAppProfile();
       const redirected = await completeRedirectSignIn(existing ?? undefined);
-      setProfile(redirected ?? existing);
+      const active = redirected ?? existing;
+      setProfile(active);
+      if (redirected) {
+        await sendWelcomeAfterAuth(redirected);
+        router.replace(nextRoute(redirected));
+      }
     })();
   }, []);
 
+  const continueWith = async (provider: Provider) => {
+    const cleanContact = contact.trim().toLowerCase();
+    setError('');
+    setMessage('');
+    setIsSubmitting(true);
+
+    try {
+      if (provider === 'guest') {
+        const guestProfile: AppProfile = {
+          contact: '',
+          provider: 'guest',
+          updatesOptIn: false,
+          atmDataOptIn,
+          createdAt: new Date().toISOString(),
+          onboardingComplete: false,
+        };
+        await saveAppProfile(guestProfile);
+        router.replace('/onboarding');
+        return;
+      }
+
+      if (provider === 'email') {
+        if (!isValidEmail(cleanContact)) throw new Error('Enter your email so Transvert can save your profile and send your sign-in link.');
+        const emailProfile: AppProfile = {
+          contact: cleanContact,
+          provider: 'email',
+          updatesOptIn,
+          atmDataOptIn,
+          createdAt: new Date().toISOString(),
+          onboardingComplete: false,
+        };
+        await saveAppProfile(emailProfile);
+        await sendMagicLink(cleanContact);
+        await sendWelcomeAfterAuth(emailProfile);
+        setMessage('Check your email. Tap the Transvert sign-in link, then complete your profile.');
+        return;
+      }
+
+      await saveAppProfile({
+        contact: cleanContact,
+        provider,
+        updatesOptIn,
+        atmDataOptIn,
+        createdAt: new Date().toISOString(),
+        onboardingComplete: false,
+      });
+      startOAuth(provider);
+    } catch (authError) {
+      setError(authError instanceof Error ? authError.message : 'Could not start sign-in.');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
   const firstName = firstNameFromProfile(profile);
-  const signedIn = Boolean(profile?.contact && profile.provider !== 'guest');
-  const route = signedIn ? (profile?.onboardingComplete ? '/scan' : '/onboarding') : '/sign-in';
+  const hasProfile = Boolean(profile?.contact && profile.provider !== 'guest');
 
   return (
     <Screen>
-      <View style={styles.header}>
-        <View style={styles.brandLockup}>
-          <View style={styles.brandMark}><Text style={styles.markText}>T</Text></View>
-          <View><Text style={styles.brand}>Transvert</Text>{firstName ? <Text style={styles.greeting}>Hi, {firstName}</Text> : null}</View>
-        </View>
-        <View style={styles.headerActions}>
-          <Pressable style={styles.signInButton} onPress={() => router.push(signedIn ? '/settings' : '/sign-in')}><Text style={styles.signInText}>{signedIn ? 'Profile' : 'Sign in'}</Text></Pressable>
-          <Pressable style={styles.headerIcon} onPress={() => router.push('/settings')}><Ionicons name="settings-outline" color={colors.muted} size={18} /></Pressable>
-        </View>
-      </View>
-      {!signedIn ? <Pressable style={styles.prompt} onPress={() => router.push('/sign-in')}><Text style={styles.promptTitle}>Save your scans before you start</Text><Text style={styles.promptCopy}>Create your free Transvert profile so menus and settings stay with you.</Text></Pressable> : null}
-      {signedIn && !profile?.onboardingComplete ? <Pressable style={styles.prompt} onPress={() => router.push('/onboarding')}><Text style={styles.promptTitle}>Complete account setup</Text><Text style={styles.promptCopy}>Choose country, currency and default travel card.</Text></Pressable> : null}
       <View style={styles.hero}>
-        <GlobalBackdrop />
-        <View style={styles.heroCopy}>
-          <Text style={styles.eyebrow}>GLOBAL PURCHASE INTELLIGENCE</Text>
-          <Text style={styles.title}>SEE IT. SCAN IT. KNOW IT.</Text>
-          <Text style={styles.subtitle}>{firstName ? `Ready for your next trip, ${firstName}?` : 'Understand what you are buying anywhere in the world.'}</Text>
-        </View>
-        <Pressable style={styles.scanButton} onPress={() => router.push(route)}><LinearGradient colors={[colors.cyan, '#b7f7ff']} style={styles.scanButtonFill}><MaterialCommunityIcons name="camera-iris" color={colors.navy950} size={25} /><Text style={styles.scanButtonText}>{signedIn ? 'Scan now' : 'Sign in to scan'}</Text></LinearGradient></Pressable>
+        <Text style={styles.eyebrow}>Transvert</Text>
+        <Text style={styles.title}>See and know the world your way.</Text>
+        <Text style={styles.copy}>Create your free profile to save scans, set your home currency, pick your card and improve ATM fee data.</Text>
       </View>
-      <View style={styles.intelligenceStrip}>{intelligence.map((item) => <View key={item.label} style={styles.signal}><Ionicons name={item.icon} color={colors.cyan} size={17} /><Text style={styles.signalLabel}>{item.label}</Text><Text style={styles.signalValue}>{item.value}</Text></View>)}</View>
-      <View style={styles.commandGrid}>
-        <Pressable style={styles.command} onPress={() => router.push(signedIn ? '/translate' : '/sign-in')}><Ionicons name="language-outline" color={colors.text} size={21} /><View style={styles.commandText}><Text style={styles.commandLabel}>Translate</Text><Text style={styles.commandMeta}>Menus, signs, receipts</Text></View><Ionicons name="arrow-forward" color={colors.dim} size={16} /></Pressable>
-        <Pressable style={styles.command} onPress={() => router.push(signedIn ? '/convert' : '/sign-in')}><MaterialCommunityIcons name="swap-horizontal" color={colors.text} size={23} /><View style={styles.commandText}><Text style={styles.commandLabel}>Convert</Text><Text style={styles.commandMeta}>Live-rate travel pricing</Text></View><Ionicons name="arrow-forward" color={colors.dim} size={16} /></Pressable>
-        <Pressable style={styles.command} onPress={() => router.push(signedIn ? '/atm' : '/sign-in')}><Ionicons name="navigate-outline" color={colors.text} size={21} /><View style={styles.commandText}><Text style={styles.commandLabel}>ATM Finder</Text><Text style={styles.commandMeta}>Low-fee routing layer</Text></View><Ionicons name="arrow-forward" color={colors.dim} size={16} /></Pressable>
-      </View>
+
+      {hasProfile ? (
+        <GlassCard style={styles.card}>
+          <Text style={styles.label}>Welcome back</Text>
+          <Text style={styles.welcome}>{firstName ? `Hi, ${firstName}` : profile?.contact}</Text>
+          <Text style={styles.muted}>Complete setup before scanning so prices, cards and ATM reports are linked correctly.</Text>
+          <Pressable style={styles.primary} onPress={() => router.replace(nextRoute(profile))}>
+            <Text style={styles.primaryText}>{profile?.onboardingComplete ? 'Open Transvert' : 'Complete account setup'}</Text>
+          </Pressable>
+        </GlassCard>
+      ) : (
+        <GlassCard style={styles.card}>
+          <Text style={styles.label}>Email</Text>
+          <TextInput
+            value={contact}
+            onChangeText={(value) => { setContact(value); setError(''); setMessage(''); }}
+            placeholder="you@example.com"
+            placeholderTextColor={colors.dim}
+            autoCapitalize="none"
+            keyboardType="email-address"
+            style={styles.input}
+          />
+          {error ? <Text style={styles.error}>{error}</Text> : null}
+          {message ? <Text style={styles.success}>{message}</Text> : null}
+
+          <Pressable style={styles.primary} onPress={() => continueWith('email')} disabled={isSubmitting}>
+            <Text style={styles.primaryText}>{isSubmitting ? 'Working...' : 'Sign up / sign in with email'}</Text>
+          </Pressable>
+
+          <View style={styles.socialGrid}>
+            <Pressable style={styles.socialButton} onPress={() => continueWith('google')} disabled={isSubmitting}>
+              <Ionicons name="logo-google" color={colors.text} size={18} />
+              <Text style={styles.socialText}>Google</Text>
+            </Pressable>
+            <Pressable style={styles.socialButton} onPress={() => continueWith('apple')} disabled={isSubmitting}>
+              <Ionicons name="logo-apple" color={colors.text} size={20} />
+              <Text style={styles.socialText}>Apple</Text>
+            </Pressable>
+          </View>
+
+          <View style={styles.consentBlock}>
+            <Pressable style={styles.consentRow} onPress={() => setUpdatesOptIn((value) => !value)}>
+              <Ionicons name={updatesOptIn ? 'checkbox' : 'square-outline'} color={colors.cyan} size={20} />
+              <Text style={styles.consentText}>Send me the welcome email and occasional Transvert updates.</Text>
+            </Pressable>
+            <Pressable style={styles.consentRow} onPress={() => setAtmDataOptIn((value) => !value)}>
+              <Ionicons name={atmDataOptIn ? 'checkbox' : 'square-outline'} color={colors.cyan} size={20} />
+              <Text style={styles.consentText}>Let me help improve ATM fee data when I report a withdrawal fee.</Text>
+            </Pressable>
+          </View>
+
+          <Pressable style={styles.guest} onPress={() => continueWith('guest')}>
+            <Text style={styles.guestText}>Preview without saving</Text>
+          </Pressable>
+        </GlassCard>
+      )}
+
       <PolicyFooter />
     </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  header: { paddingTop: 30, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  brandLockup: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  headerActions: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  signInButton: { height: 38, borderRadius: 19, borderWidth: 1, borderColor: colors.border, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 14 },
-  signInText: { color: colors.cyan, fontSize: 12, fontWeight: '900' },
-  brandMark: { width: 34, height: 34, alignItems: 'center', justifyContent: 'center', borderRadius: 9, borderWidth: 1, borderColor: colors.borderStrong, backgroundColor: 'rgba(255,255,255,0.04)' },
-  markText: { color: colors.text, fontSize: 20, fontWeight: '700' },
-  brand: { color: colors.text, fontSize: 19, fontWeight: '700' },
-  greeting: { marginTop: 2, color: colors.cyan, fontSize: 12, fontWeight: '800' },
-  headerIcon: { width: 38, height: 38, alignItems: 'center', justifyContent: 'center', borderRadius: 19, borderWidth: 1, borderColor: colors.border },
-  prompt: { marginTop: 16, borderRadius: 18, borderWidth: 1, borderColor: colors.border, backgroundColor: 'rgba(103,232,249,0.08)', padding: 14 },
-  promptTitle: { color: colors.text, fontSize: 15, fontWeight: '900' },
-  promptCopy: { marginTop: 5, color: colors.muted, fontSize: 12, lineHeight: 18 },
-  hero: { minHeight: 486, justifyContent: 'flex-end', overflow: 'hidden', marginHorizontal: -22, marginTop: 12, paddingHorizontal: 22, paddingBottom: 24 },
-  heroCopy: { maxWidth: 330 },
-  eyebrow: { color: colors.cyan, fontSize: 10, fontWeight: '700', letterSpacing: 2.8 },
-  title: { marginTop: 18, color: colors.text, fontSize: 56, fontWeight: '800', lineHeight: 58 },
-  subtitle: { marginTop: 18, maxWidth: 285, color: colors.muted, fontSize: 16, lineHeight: 24 },
-  scanButton: { marginTop: 28, width: 192, height: 54, borderRadius: 27, shadowColor: colors.cyan, shadowOpacity: 0.36, shadowRadius: 22 },
-  scanButtonFill: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 9, borderRadius: 27 },
-  scanButtonText: { color: colors.navy950, fontSize: 15, fontWeight: '800' },
-  intelligenceStrip: { flexDirection: 'row', gap: 8, marginTop: 8 },
-  signal: { flex: 1, minHeight: 98, justifyContent: 'space-between', borderRadius: 16, borderWidth: 1, borderColor: colors.border, backgroundColor: 'rgba(255,255,255,0.035)', padding: 12 },
-  signalLabel: { color: colors.dim, fontSize: 10, fontWeight: '700', letterSpacing: 1.4, textTransform: 'uppercase' },
-  signalValue: { color: colors.text, fontSize: 12, lineHeight: 16 },
-  commandGrid: { gap: 10, marginTop: 20 },
-  command: { minHeight: 68, flexDirection: 'row', alignItems: 'center', gap: 14, borderRadius: 18, borderWidth: 1, borderColor: colors.border, backgroundColor: 'rgba(255,255,255,0.035)', paddingHorizontal: 16 },
-  commandText: { flex: 1, minWidth: 0 },
-  commandLabel: { color: colors.text, fontSize: 16, fontWeight: '700' },
-  commandMeta: { marginTop: 4, color: colors.dim, fontSize: 12 },
+  hero: { paddingTop: 42, marginBottom: 22 },
+  eyebrow: { color: colors.cyan, fontSize: 12, fontWeight: '900', letterSpacing: 3, textTransform: 'uppercase' },
+  title: { marginTop: 12, color: colors.text, fontSize: 42, lineHeight: 46, fontWeight: '900' },
+  copy: { marginTop: 14, color: colors.muted, fontSize: 16, lineHeight: 23 },
+  card: { gap: 12 },
+  label: { color: colors.dim, fontSize: 11, fontWeight: '900', letterSpacing: 2, textTransform: 'uppercase' },
+  input: { height: 54, borderRadius: 17, borderWidth: 1, borderColor: colors.border, color: colors.text, paddingHorizontal: 16, fontSize: 16, fontWeight: '700', backgroundColor: 'rgba(255,255,255,0.04)' },
+  error: { color: colors.danger, fontSize: 12, fontWeight: '800' },
+  success: { color: colors.success, fontSize: 12, fontWeight: '800', lineHeight: 18 },
+  primary: { height: 54, borderRadius: 27, backgroundColor: colors.cyan, alignItems: 'center', justifyContent: 'center' },
+  primaryText: { color: colors.navy950, fontSize: 15, fontWeight: '900' },
+  socialGrid: { flexDirection: 'row', gap: 8 },
+  socialButton: { flex: 1, height: 48, borderRadius: 24, borderWidth: 1, borderColor: colors.border, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 7 },
+  socialText: { color: colors.text, fontSize: 12, fontWeight: '900' },
+  consentBlock: { gap: 10, marginTop: 8 },
+  consentRow: { flexDirection: 'row', gap: 10, alignItems: 'flex-start' },
+  consentText: { flex: 1, color: colors.muted, fontSize: 13, lineHeight: 19 },
+  guest: { alignItems: 'center', paddingVertical: 10 },
+  guestText: { color: colors.dim, fontSize: 13, fontWeight: '800' },
+  welcome: { color: colors.text, fontSize: 28, fontWeight: '900' },
+  muted: { color: colors.muted, fontSize: 14, lineHeight: 20 },
 });
