@@ -15,7 +15,13 @@ export const env = {
     process.env.EXPO_PUBLIC_GOOGLE_API_KEY,
   googleApiKey: process.env.EXPO_PUBLIC_GOOGLE_API_KEY,
   atmProvider: process.env.EXPO_PUBLIC_ATM_PROVIDER ?? 'local',
-  supabaseUrl: process.env.EXPO_PUBLIC_SUPABASE_URL,
-  supabaseAnonKey: process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY,
+  supabaseUrl:
+    process.env.EXPO_PUBLIC_SUPABASE_URL ??
+    process.env.SUPABASE_URL,
+  supabaseAnonKey:
+    process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY ??
+    process.env.EXPO_PUBLIC_SUPABASE_ANNON_KEY ??
+    process.env.EXPO_PUBLIC_SUPABASE_PUBLIC_ANON_KEY ??
+    process.env.SUPABASE_ANON_KEY,
   supabaseOcrBucket: process.env.EXPO_PUBLIC_SUPABASE_OCR_BUCKET ?? 'scan-images',
 };
