@@ -6,6 +6,7 @@ import { GlassCard } from '@/components/GlassCard';
 import { PolicyFooter } from '@/components/PolicyFooter';
 import { Screen } from '@/components/Screen';
 import { completeRedirectSignIn, sendMagicLink, startOAuth, type AuthProvider } from '@/services/auth/supabaseAuth';
+import { sendWelcomeAfterAuth } from '@/services/auth/welcomeAfterAuth';
 import { getAppProfile, saveAppProfile } from '@/storage/appProfile';
 import { colors } from '@/theme/colors';
 
@@ -27,7 +28,10 @@ export default function SignInScreen() {
     (async () => {
       const existing = await getAppProfile();
       const profile = await completeRedirectSignIn(existing ?? undefined);
-      if (profile) router.replace('/');
+      if (profile) {
+        await sendWelcomeAfterAuth(profile);
+        router.replace('/');
+      }
     })();
   }, []);
 
@@ -52,9 +56,11 @@ export default function SignInScreen() {
 
       if (provider === 'email') {
         if (!isValidEmail(cleanContact)) throw new Error('Enter your email so Transvert can send your sign-in link.');
-        await saveAppProfile({ contact: cleanContact, provider: 'email', updatesOptIn, atmDataOptIn, createdAt: new Date().toISOString() });
+        const profile = { contact: cleanContact, provider: 'email' as const, updatesOptIn, atmDataOptIn, createdAt: new Date().toISOString() };
+        await saveAppProfile(profile);
         await sendMagicLink(cleanContact);
-        setMessage('Check your email. We sent you a secure Transvert sign-in link.');
+        await sendWelcomeAfterAuth(profile);
+        setMessage('Check your email. We sent you a secure Transvert sign-in link and welcome note.');
         return;
       }
 
