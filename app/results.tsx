@@ -30,6 +30,7 @@ export default function ResultsScreen() {
   const [showOriginal, setShowOriginal] = useState(false);
   const [imageLoadError, setImageLoadError] = useState(false);
   const [spokenId, setSpokenId] = useState<string | null>(null);
+  const [feedback, setFeedback] = useState<'right' | 'wrong' | null>(null);
   const scan = useMemo(() => scans.find((item) => item.id === id), [id, scans]);
   const isWide = width >= 760;
 
@@ -58,7 +59,7 @@ export default function ResultsScreen() {
   const qualityTone = ocrQuality.label === 'poor' ? styles.qualityPoor : ocrQuality.label === 'fair' ? styles.qualityFair : styles.qualityGood;
 
   const handleSave = async () => {
-    await saveScan({ ...scan, translatedText, rebuiltMenu });
+    await saveScan({ ...scan, translatedText, rebuiltMenu, userFeedback: feedback } as any);
     await refresh();
     setSavedMessage(true);
   };
@@ -129,7 +130,7 @@ export default function ResultsScreen() {
               <View style={styles.menuHeaderText}>
                 <Text style={styles.menuEyebrow}>Translated restaurant menu</Text>
                 <Text style={styles.menuTitle}>{rebuiltMenu?.title ?? 'Translated Menu'}</Text>
-                <Text style={styles.menuSubtitle}>Tap the speaker to order it in Spanish</Text>
+                <Text style={styles.menuSubtitle}>Tap “Order this” to say it in Spanish</Text>
               </View>
               <View style={styles.menuCountPill}>
                 <Text style={styles.menuCount}>{rebuiltMenu?.itemCount ?? scan.prices.length}</Text>
@@ -159,7 +160,7 @@ export default function ResultsScreen() {
                           {item.icons.length > 0 && <Text style={styles.icons}>{item.icons.join('  ')}</Text>}
                           <Pressable style={[styles.speakButton, spokenId === item.id && styles.speakButtonActive]} onPress={() => speakItem(item)}>
                             <Ionicons name="volume-high-outline" color={spokenId === item.id ? colors.navy950 : colors.cyan} size={16} />
-                            <Text style={[styles.speakText, spokenId === item.id && styles.speakTextActive]}>Say it</Text>
+                            <Text style={[styles.speakText, spokenId === item.id && styles.speakTextActive]}>Order this</Text>
                           </Pressable>
                         </View>
                       </View>
@@ -172,6 +173,21 @@ export default function ResultsScreen() {
           </GlassCard>
         </>
       )}
+
+      <GlassCard style={styles.card}>
+        <Text style={styles.label}>Was this useful?</Text>
+        <View style={styles.feedbackRow}>
+          <Pressable style={[styles.feedbackButton, feedback === 'right' && styles.feedbackActive]} onPress={() => setFeedback('right')}>
+            <Ionicons name="checkmark-circle-outline" color={feedback === 'right' ? colors.navy950 : colors.cyan} size={17} />
+            <Text style={[styles.feedbackText, feedback === 'right' && styles.feedbackTextActive]}>Looks right</Text>
+          </Pressable>
+          <Pressable style={[styles.feedbackButton, feedback === 'wrong' && styles.feedbackActive]} onPress={() => setFeedback('wrong')}>
+            <Ionicons name="alert-circle-outline" color={feedback === 'wrong' ? colors.navy950 : colors.cyan} size={17} />
+            <Text style={[styles.feedbackText, feedback === 'wrong' && styles.feedbackTextActive]}>Needs fixing</Text>
+          </Pressable>
+        </View>
+        <Text style={styles.feedbackHelp}>Tester feedback is saved with the scan so we can improve parsing before public launch.</Text>
+      </GlassCard>
 
       <GlassCard style={[styles.card, qualityTone]}>
         <View style={styles.qualityHeader}>
@@ -265,6 +281,12 @@ const styles = StyleSheet.create({
   speakText: { color: colors.cyan, fontSize: 12, fontWeight: '900' },
   speakTextActive: { color: colors.navy950 },
   rebuiltNote: { marginTop: 18, color: colors.dim, fontSize: 12, lineHeight: 18 },
+  feedbackRow: { flexDirection: 'row', gap: 10, marginTop: 12 },
+  feedbackButton: { flex: 1, height: 42, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7, borderRadius: 21, borderWidth: 1, borderColor: 'rgba(103,232,249,0.32)' },
+  feedbackActive: { backgroundColor: colors.cyan, borderColor: colors.cyan },
+  feedbackText: { color: colors.cyan, fontSize: 12, fontWeight: '900' },
+  feedbackTextActive: { color: colors.navy950 },
+  feedbackHelp: { marginTop: 10, color: colors.dim, fontSize: 11, lineHeight: 16 },
   qualityHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   qualityScore: { color: colors.text, fontSize: 18, fontWeight: '900' },
   qualityTitle: { marginTop: 10, color: colors.text, fontSize: 18, fontWeight: '900' },
