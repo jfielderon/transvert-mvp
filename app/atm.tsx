@@ -11,6 +11,7 @@ import { colors } from '@/theme/colors';
 
 type AtmState = 'idle' | 'permission' | 'loading' | 'manual' | 'ready' | 'error';
 type Coords = { latitude: number; longitude: number };
+type ReportValue = 'free' | '3.50' | '4.99' | 'other';
 
 function withTimeout<T>(promise: Promise<T>, message: string, ms = 10000) {
   return Promise.race([
@@ -32,6 +33,11 @@ export default function AtmScreen() {
   const [warning, setWarning] = useState('Fee data estimate / community data coming soon.');
   const [mapImageUrl, setMapImageUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [reports, setReports] = useState<Record<string, ReportValue>>({});
+
+  const reportFee = (atm: AtmLocation, value: ReportValue) => {
+    setReports((current) => ({ ...current, [atm.id]: value }));
+  };
 
   const applyAtmResult = (result: Awaited<ReturnType<typeof findNearbyAtms>>) => {
     setAtms(result.atms);
@@ -257,7 +263,7 @@ export default function AtmScreen() {
                 <Text style={styles.atmName}>{atm.name}</Text>
                 <Text style={styles.atmMeta}>{formatDistance(atm.distanceMeters)} - {atm.openLabel}</Text>
               </View>
-              <Text style={[styles.fee, atm.risk === 'high' && styles.feeWarning]}>{atm.feeLabel}</Text>
+              <Text style={[styles.fee, atm.risk === 'high' && styles.feeWarning]}>{reports[atm.id] === 'free' ? 'Reported free' : reports[atm.id] ? `Reported €${reports[atm.id]}` : atm.feeLabel}</Text>
             </View>
             <View style={styles.atmFooter}>
               <Text style={styles.risk}>{atm.riskLabel}</Text>
@@ -266,6 +272,13 @@ export default function AtmScreen() {
               </Pressable>
             </View>
             <Text style={styles.feeData}>{atm.feeDataStatus === 'community-coming-soon' ? 'Community fee data coming soon' : 'Fee data estimate'}</Text>
+            <Text style={styles.reportLabel}>Report what the screen charged</Text>
+            <View style={styles.reportRow}>
+              <Pressable style={[styles.reportButton, reports[atm.id] === 'free' && styles.reportActive]} onPress={() => reportFee(atm, 'free')}><Text style={[styles.reportText, reports[atm.id] === 'free' && styles.reportTextActive]}>Free</Text></Pressable>
+              <Pressable style={[styles.reportButton, reports[atm.id] === '3.50' && styles.reportActive]} onPress={() => reportFee(atm, '3.50')}><Text style={[styles.reportText, reports[atm.id] === '3.50' && styles.reportTextActive]}>€3.50</Text></Pressable>
+              <Pressable style={[styles.reportButton, reports[atm.id] === '4.99' && styles.reportActive]} onPress={() => reportFee(atm, '4.99')}><Text style={[styles.reportText, reports[atm.id] === '4.99' && styles.reportTextActive]}>€4.99</Text></Pressable>
+              <Pressable style={[styles.reportButton, reports[atm.id] === 'other' && styles.reportActive]} onPress={() => reportFee(atm, 'other')}><Text style={[styles.reportText, reports[atm.id] === 'other' && styles.reportTextActive]}>Other</Text></Pressable>
+            </View>
           </GlassCard>
         ))}
       </View>
@@ -320,4 +333,10 @@ const styles = StyleSheet.create({
   risk: { flex: 1, color: colors.muted, fontSize: 12 },
   cardCompat: { color: colors.cyan, fontSize: 12, fontWeight: '800', textAlign: 'right' },
   feeData: { marginTop: 10, color: colors.dim, fontSize: 11 },
+  reportLabel: { marginTop: 12, color: colors.dim, fontSize: 10, fontWeight: '900', letterSpacing: 1.4, textTransform: 'uppercase' },
+  reportRow: { flexDirection: 'row', gap: 6, marginTop: 8, flexWrap: 'wrap' },
+  reportButton: { borderRadius: 999, borderWidth: 1, borderColor: 'rgba(103,232,249,0.32)', paddingHorizontal: 10, paddingVertical: 7 },
+  reportActive: { backgroundColor: colors.cyan, borderColor: colors.cyan },
+  reportText: { color: colors.cyan, fontSize: 11, fontWeight: '900' },
+  reportTextActive: { color: colors.navy950 },
 });
