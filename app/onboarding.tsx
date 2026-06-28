@@ -5,11 +5,32 @@ import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { GlassCard } from '@/components/GlassCard';
 import { Screen } from '@/components/Screen';
 import { firstNameFromProfile } from '@/services/auth/supabaseAuth';
+import { insertClientRow } from '@/services/supabase/clientRest';
 import { getAppProfile, saveAppProfile, type AppProfile } from '@/storage/appProfile';
 import { colors } from '@/theme/colors';
 
 const cards = ['Revolut', 'Starling', 'Chase', 'Wise', 'Monzo', 'Other'];
 const countries = ['United Kingdom', 'Ireland', 'Spain', 'France', 'Portugal', 'Other'];
+
+async function syncProfile(profile: AppProfile) {
+  if (!profile.userId) return;
+  try {
+    await insertClientRow('profiles', {
+      id: profile.userId,
+      email: profile.contact,
+      first_name: profile.name?.split(' ')[0] ?? profile.contact?.split('@')[0],
+      full_name: profile.name,
+      provider: profile.provider,
+      preferred_language: profile.preferredLanguage ?? 'English',
+      preferred_currency: profile.preferredCurrency ?? 'GBP',
+      marketing_opt_in: profile.updatesOptIn,
+      atm_data_opt_in: profile.atmDataOptIn,
+      last_seen_at: new Date().toISOString(),
+    });
+  } catch (error) {
+    console.warn('[profile] Supabase sync skipped', error);
+  }
+}
 
 export default function OnboardingScreen() {
   const [profile, setProfile] = useState<AppProfile | null>(null);
@@ -39,6 +60,7 @@ export default function OnboardingScreen() {
       onboardingComplete: true,
     };
     await saveAppProfile(nextProfile);
+    await syncProfile(nextProfile);
     router.replace('/scan');
   };
 
