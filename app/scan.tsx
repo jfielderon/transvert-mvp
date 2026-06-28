@@ -24,6 +24,13 @@ type SelectedImage = {
 
 type PipelineSource = 'camera' | 'library' | 'manual';
 
+const scanIdeas = [
+  { icon: 'restaurant-outline' as const, label: 'Menu' },
+  { icon: 'receipt-outline' as const, label: 'Receipt' },
+  { icon: 'trail-sign-outline' as const, label: 'Sign' },
+  { icon: 'pricetag-outline' as const, label: 'Label' },
+];
+
 export default function ScanScreen() {
   const [imageUri, setImageUri] = useState<string | null>(null);
   const [selectedImage, setSelectedImage] = useState<SelectedImage | null>(null);
@@ -33,7 +40,7 @@ export default function ScanScreen() {
   const [isCapturing, setIsCapturing] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [pipelineState, setPipelineState] = useState('Ready');
-  const [notice, setNotice] = useState('Use Lens or Upload. Transvert will extract, translate, detect prices and convert automatically.');
+  const [notice, setNotice] = useState('Point your camera at a menu, sign, receipt or label.');
   const [error, setError] = useState<string | null>(null);
   const [rates, setRates] = useState<FxRates>(getRateSnapshot().rates);
 
@@ -51,14 +58,14 @@ export default function ScanScreen() {
         setIsProcessing(true);
         setError(null);
         setPipelineState(source === 'manual' ? 'Reading text' : 'Reading image');
-        setNotice('Scanning text, translating and checking prices...');
+        setNotice('Scanning, translating and converting...');
 
         let workingText = manualText?.trim() ?? '';
         let workingOcrStatus: 'success' | 'fallback' | 'failed' = source === 'manual' ? 'fallback' : ocrStatus;
         let savedImageUri = image?.uri ?? imageUri ?? undefined;
 
         if (image) {
-          setPipelineState('Uploading image');
+          setPipelineState('Preparing image');
           const upload = await uploadOcrImageToSupabase(image);
           const ocrInput = {
             uri: image.uri,
@@ -75,27 +82,16 @@ export default function ScanScreen() {
           workingOcrStatus = ocr.status;
           setText(workingText);
           setOcrStatus(ocr.status);
-          setNotice(ocr.warnings[0] ?? (workingText ? 'Text found. Preparing result...' : 'No readable text found.'));
-
-          console.log('[scan] OCR result before process', {
-            provider: ocr.provider,
-            status: ocr.status,
-            textLength: ocr.text.length,
-            trimmedTextLength: workingText.length,
-            warnings: ocr.warnings,
-            usedImageUrl: Boolean(upload.input.imageUrl),
-          });
+          setNotice(ocr.warnings[0] ?? (workingText ? 'Text found. Building your result...' : 'No readable text found.'));
 
           if (ocr.status === 'failed' && !workingText) {
             throw new Error(ocr.warnings[0] ?? 'OCR failed. Try a clearer, closer image.');
           }
         }
 
-        if (!workingText) {
-          throw new Error('No readable text found. Try a closer image or paste the text manually.');
-        }
+        if (!workingText) throw new Error('No readable text found. Try a closer image or paste the text manually.');
 
-        setPipelineState('Translating');
+        setPipelineState('Building result');
         const scanRecord = await processScanInput({
           text: workingText,
           imageUri: savedImageUri,
@@ -104,13 +100,13 @@ export default function ScanScreen() {
           mode: 'menu',
         });
 
-        setPipelineState('Saving result');
+        setPipelineState('Saving');
         await saveScan(scanRecord);
         router.push({ pathname: '/results', params: { id: scanRecord.id } });
       } catch (processError) {
         setError(processError instanceof Error ? processError.message : 'Could not process scan.');
         setPipelineState('Needs review');
-        setNotice('Edit the text box manually, upload a clearer image, or try Lens again.');
+        setNotice('Try a clearer photo, upload again, or paste the text manually.');
       } finally {
         setIsProcessing(false);
       }
@@ -121,26 +117,18 @@ export default function ScanScreen() {
   const uploadImage = useCallback(async () => {
     setError(null);
     setIsPicking(true);
-
     try {
       const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
       if (!permission.granted) throw new Error('Photo library permission was denied.');
-
-      const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
-        base64: true,
-        quality: 0.65,
-      });
-
+      const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ImagePicker.MediaTypeOptions.Images, base64: true, quality: 0.65 });
       if (result.canceled || !result.assets[0]?.uri) return;
-
       const asset = result.assets[0];
       const image = { uri: asset.uri, base64: asset.base64 ?? undefined, mimeType: asset.mimeType ?? undefined };
       setSelectedImage(image);
       setImageUri(image.uri);
       setText('');
       setOcrStatus('fallback');
-      setPipelineState('Image selected');
+      setPipelineState('Photo selected');
       await runPipeline({ image, source: 'library' });
     } catch (uploadError) {
       setError(uploadError instanceof Error ? uploadError.message : 'Could not upload image.');
@@ -152,19 +140,11 @@ export default function ScanScreen() {
   const enableCamera = useCallback(async () => {
     setError(null);
     setIsCapturing(true);
-
     try {
       const permission = await ImagePicker.requestCameraPermissionsAsync();
       if (!permission.granted) throw new Error('Camera permission was denied.');
-
-      const result = await ImagePicker.launchCameraAsync({
-        allowsEditing: false,
-        base64: true,
-        quality: 0.65,
-      });
-
+      const result = await ImagePicker.launchCameraAsync({ allowsEditing: false, base64: true, quality: 0.65 });
       if (result.canceled || !result.assets[0]?.uri) return;
-
       const asset = result.assets[0];
       const image = { uri: asset.uri, base64: asset.base64 ?? undefined, mimeType: asset.mimeType ?? undefined };
       setSelectedImage(image);
@@ -185,8 +165,8 @@ export default function ScanScreen() {
     setImageUri(null);
     setText(SAMPLE_INPUT_PLACEHOLDER);
     setOcrStatus('fallback');
-    setPipelineState('Example loaded');
-    setNotice('Example loaded. Tap Process text to create a result.');
+    setPipelineState('Example ready');
+    setNotice('Example loaded. Tap Build result.');
     setError(null);
   };
 
@@ -196,7 +176,7 @@ export default function ScanScreen() {
     setImageUri(null);
     setOcrStatus('fallback');
     setPipelineState('Ready');
-    setNotice('Use Lens or Upload. Transvert will process automatically.');
+    setNotice('Point your camera at a menu, sign, receipt or label.');
     setError(null);
   };
 
@@ -206,344 +186,146 @@ export default function ScanScreen() {
         <Pressable style={styles.iconButton} onPress={() => router.back()}>
           <Ionicons name="chevron-back" color={colors.text} size={20} />
         </Pressable>
-        <View style={styles.titleBlock}>
-          <Text style={styles.title}>Lens scan</Text>
-          <Text style={styles.subtitle}>Capture, translate, convert.</Text>
-        </View>
         <Pressable style={styles.iconButton} onPress={clearText}>
           <Ionicons name="refresh-outline" color={colors.muted} size={18} />
         </Pressable>
       </View>
 
+      <View style={styles.hero}>
+        <Text style={styles.kicker}>Transvert Lens</Text>
+        <Text style={styles.heroTitle}>Scan away.</Text>
+        <Text style={styles.heroCopy}>See it. Translate it. Know what it costs.</Text>
+      </View>
+
       <View style={styles.preview}>
-        <View style={styles.scanGlow} />
-        {imageUri ? (
-          <Image source={{ uri: imageUri }} resizeMode="contain" style={styles.previewImage} />
-        ) : (
-          <View style={styles.previewEmpty}>
-            <MaterialCommunityIcons name="google-lens" color={colors.cyan} size={44} />
-            <Text style={styles.previewTitle}>Point, capture, know.</Text>
-            <Text style={styles.previewCopy}>Use Lens for a fresh photo or Upload for a saved menu, receipt, sign or label.</Text>
-          </View>
-        )}
+        {imageUri ? <Image source={{ uri: imageUri }} resizeMode="cover" style={styles.previewImage} /> : <View style={styles.previewBackground} />}
+        <View style={styles.focusShade} />
         <View style={[styles.corner, styles.topLeft]} />
         <View style={[styles.corner, styles.topRight]} />
         <View style={[styles.corner, styles.bottomLeft]} />
         <View style={[styles.corner, styles.bottomRight]} />
-        {isProcessing && (
+        {!imageUri && !isProcessing ? (
+          <View style={styles.scanPrompt}>
+            <MaterialCommunityIcons name="line-scan" color={colors.cyan} size={34} />
+            <Text style={styles.scanPromptTitle}>Point at anything</Text>
+            <Text style={styles.scanPromptCopy}>Menus, signs, receipts, prices and labels.</Text>
+          </View>
+        ) : null}
+        {isProcessing ? (
           <View style={styles.processingOverlay}>
             <ActivityIndicator color={colors.cyan} />
-            <Text style={styles.processingText}>{pipelineState}</Text>
+            <Text style={styles.processingTitle}>{pipelineState}</Text>
+            <Text style={styles.processingCopy}>Turning the photo into something useful.</Text>
           </View>
-        )}
+        ) : null}
       </View>
 
-      <View style={styles.primaryRow}>
-        <Pressable style={styles.lensButton} onPress={enableCamera} disabled={isCapturing || isProcessing}>
-          {isCapturing ? <ActivityIndicator color={colors.navy950} /> : <MaterialCommunityIcons name="google-lens" color={colors.navy950} size={22} />}
-          <Text style={styles.lensButtonText}>Live Lens</Text>
+      <View style={styles.captureDock}>
+        <Pressable style={styles.uploadMini} onPress={uploadImage} disabled={isPicking || isProcessing}>
+          {isPicking ? <ActivityIndicator color={colors.text} size="small" /> : <Ionicons name="images-outline" color={colors.text} size={20} />}
+          <Text style={styles.uploadMiniText}>Upload</Text>
         </Pressable>
-        <Pressable style={styles.uploadButton} onPress={uploadImage} disabled={isPicking || isProcessing}>
-          {isPicking ? <ActivityIndicator color={colors.text} /> : <Ionicons name="image-outline" color={colors.text} size={20} />}
-          <Text style={styles.uploadButtonText}>Upload</Text>
+        <Pressable style={styles.shutter} onPress={enableCamera} disabled={isCapturing || isProcessing}>
+          {isCapturing ? <ActivityIndicator color={colors.navy950} /> : <View style={styles.shutterInner}><Ionicons name="camera" color={colors.navy950} size={26} /></View>}
+        </Pressable>
+        <Pressable style={styles.uploadMini} onPress={useExample} disabled={isProcessing}>
+          <Ionicons name="sparkles-outline" color={colors.text} size={20} />
+          <Text style={styles.uploadMiniText}>Demo</Text>
         </Pressable>
       </View>
 
       <Text style={styles.notice}>{notice}</Text>
-      {error && <Text style={styles.error}>{error}</Text>}
+      {error ? <Text style={styles.error}>{error}</Text> : null}
 
-      <GlassCard style={styles.editor}>
-        <View style={styles.editorHeader}>
-          <Text style={styles.label}>Manual review</Text>
-          <Text style={styles.editorMeta}>Auto-detect type • Auto to English • EUR to GBP</Text>
-        </View>
-        <TextInput
-          value={text}
-          onChangeText={(value) => {
-            setText(value);
-            setError(null);
-            setPipelineState(value.trim() ? 'Ready to process text' : 'Ready');
-          }}
-          multiline
-          placeholder="Extracted OCR text will appear here. You can also paste text manually."
-          placeholderTextColor={colors.dim}
-          style={styles.input}
-        />
-        <View style={styles.metrics}>
-          <View>
-            <Text style={styles.metricLabel}>Prices</Text>
-            <Text style={styles.metricValue}>{prices.length}</Text>
+      {!text.trim() ? (
+        <GlassCard style={styles.inspirationCard}>
+          <Text style={styles.label}>What can I scan?</Text>
+          <View style={styles.ideaGrid}>
+            {scanIdeas.map((idea) => (
+              <View key={idea.label} style={styles.ideaTile}>
+                <Ionicons name={idea.icon} color={colors.cyan} size={18} />
+                <Text style={styles.ideaText}>{idea.label}</Text>
+              </View>
+            ))}
           </View>
-          <View style={styles.metricRight}>
-            <Text style={styles.metricLabel}>GBP estimate</Text>
-            <Text style={styles.metricValue}>{prices.length ? formatGbp(total) : '—'}</Text>
-          </View>
-        </View>
-      </GlassCard>
-
-      {!!translated && (
-        <GlassCard style={styles.translationPreview}>
-          <Text style={[styles.label, styles.cyanLabel]}>Translation preview</Text>
-          <Text style={styles.translatedText} numberOfLines={5}>{translated}</Text>
         </GlassCard>
-      )}
-
-      <View style={styles.secondaryRow}>
-        <Pressable style={styles.secondaryAction} onPress={useExample}>
-          <Text style={styles.secondaryActionText}>Use example</Text>
-        </Pressable>
-        <Pressable style={styles.secondaryAction} onPress={clearText}>
-          <Text style={styles.secondaryActionText}>Clear</Text>
-        </Pressable>
-      </View>
-
-      {!!text.trim() && !selectedImage && (
-        <Pressable style={styles.processButton} onPress={() => runPipeline({ manualText: text, source: 'manual' })} disabled={isProcessing}>
-          {isProcessing ? <ActivityIndicator color={colors.navy950} /> : <Text style={styles.processText}>Process text</Text>}
-          <Ionicons name="arrow-forward" color={colors.navy950} size={19} />
-        </Pressable>
+      ) : (
+        <GlassCard style={styles.resultCard}>
+          <View style={styles.resultHeader}>
+            <View>
+              <Text style={styles.label}>Ready to build</Text>
+              <Text style={styles.resultTitle}>{prices.length ? `${prices.length} prices found` : 'Text captured'}</Text>
+            </View>
+            <View style={styles.totalPill}>
+              <Text style={styles.totalLabel}>GBP</Text>
+              <Text style={styles.totalValue}>{prices.length ? formatGbp(total) : '—'}</Text>
+            </View>
+          </View>
+          <TextInput
+            value={text}
+            onChangeText={(value) => {
+              setText(value);
+              setError(null);
+              setPipelineState(value.trim() ? 'Ready to process text' : 'Ready');
+            }}
+            multiline
+            placeholder="Paste text here if you need to fix the scan."
+            placeholderTextColor={colors.dim}
+            style={styles.input}
+          />
+          {!!translated && <Text style={styles.translatedText} numberOfLines={4}>{translated}</Text>}
+          <Pressable style={styles.processButton} onPress={() => runPipeline({ manualText: text, source: 'manual' })} disabled={isProcessing}>
+            {isProcessing ? <ActivityIndicator color={colors.navy950} /> : <Text style={styles.processText}>Build result</Text>}
+            <Ionicons name="arrow-forward" color={colors.navy950} size={19} />
+          </Pressable>
+        </GlassCard>
       )}
     </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  header: {
-    paddingTop: 28,
-    marginBottom: 18,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  iconButton: {
-    width: 38,
-    height: 38,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: 19,
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
-  titleBlock: {
-    alignItems: 'center',
-  },
-  title: {
-    color: colors.text,
-    fontSize: 19,
-    fontWeight: '800',
-  },
-  subtitle: {
-    marginTop: 3,
-    color: colors.dim,
-    fontSize: 11,
-  },
-  preview: {
-    height: 265,
-    overflow: 'hidden',
-    borderRadius: 24,
-    borderWidth: 1,
-    borderColor: 'rgba(103,232,249,0.18)',
-    backgroundColor: 'rgba(2, 7, 19, 0.72)',
-    shadowColor: colors.cyan,
-    shadowOpacity: 0.16,
-    shadowRadius: 18,
-  },
-  scanGlow: {
-    position: 'absolute',
-    left: 42,
-    right: 42,
-    top: 62,
-    bottom: 62,
-    borderRadius: 30,
-    borderWidth: 1,
-    borderColor: colors.cyanGlow,
-    backgroundColor: 'rgba(103,232,249,0.035)',
-  },
-  previewImage: {
-    ...StyleSheet.absoluteFillObject,
-    opacity: 0.96,
-  },
-  previewEmpty: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 34,
-  },
-  previewTitle: {
-    marginTop: 16,
-    color: colors.text,
-    fontSize: 23,
-    fontWeight: '800',
-  },
-  previewCopy: {
-    marginTop: 8,
-    color: colors.muted,
-    textAlign: 'center',
-    fontSize: 14,
-    lineHeight: 20,
-  },
-  corner: {
-    position: 'absolute',
-    width: 42,
-    height: 42,
-    borderColor: colors.cyan,
-  },
-  topLeft: { top: 22, left: 22, borderTopWidth: 1, borderLeftWidth: 1 },
-  topRight: { top: 22, right: 22, borderTopWidth: 1, borderRightWidth: 1 },
-  bottomLeft: { bottom: 22, left: 22, borderBottomWidth: 1, borderLeftWidth: 1 },
-  bottomRight: { right: 22, bottom: 22, borderRightWidth: 1, borderBottomWidth: 1 },
-  processingOverlay: {
-    ...StyleSheet.absoluteFillObject,
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 10,
-    backgroundColor: 'rgba(2,7,19,0.72)',
-  },
-  processingText: {
-    color: colors.cyan,
-    fontWeight: '800',
-  },
-  primaryRow: {
-    flexDirection: 'row',
-    gap: 10,
-    marginTop: 16,
-  },
-  lensButton: {
-    flex: 1.2,
-    height: 54,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 9,
-    borderRadius: 27,
-    backgroundColor: colors.cyan,
-  },
-  lensButtonText: {
-    color: colors.navy950,
-    fontSize: 16,
-    fontWeight: '900',
-  },
-  uploadButton: {
-    flex: 1,
-    height: 54,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    borderRadius: 27,
-    borderWidth: 1,
-    borderColor: colors.borderStrong,
-    backgroundColor: 'rgba(255,255,255,0.045)',
-  },
-  uploadButtonText: {
-    color: colors.text,
-    fontSize: 15,
-    fontWeight: '800',
-  },
-  notice: {
-    marginTop: 13,
-    color: colors.dim,
-    fontSize: 12,
-    lineHeight: 18,
-  },
-  error: {
-    marginTop: 12,
-    color: colors.danger,
-    fontWeight: '800',
-  },
-  editor: {
-    marginTop: 16,
-  },
-  editorHeader: {
-    gap: 6,
-  },
-  label: {
-    color: colors.dim,
-    fontSize: 10,
-    fontWeight: '800',
-    letterSpacing: 2.4,
-    textTransform: 'uppercase',
-  },
-  editorMeta: {
-    color: colors.muted,
-    fontSize: 12,
-  },
-  input: {
-    minHeight: 142,
-    marginTop: 14,
-    color: colors.text,
-    fontSize: 16,
-    lineHeight: 25,
-    textAlignVertical: 'top',
-  },
-  metrics: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    borderTopWidth: 1,
-    borderTopColor: colors.border,
-    paddingTop: 14,
-  },
-  metricRight: {
-    alignItems: 'flex-end',
-  },
-  metricLabel: {
-    color: colors.dim,
-    fontSize: 10,
-    fontWeight: '800',
-    letterSpacing: 1.2,
-    textTransform: 'uppercase',
-  },
-  metricValue: {
-    marginTop: 5,
-    color: colors.text,
-    fontSize: 18,
-    fontWeight: '800',
-  },
-  translationPreview: {
-    marginTop: 12,
-    borderColor: colors.cyanGlow,
-  },
-  cyanLabel: {
-    color: colors.cyan,
-  },
-  translatedText: {
-    marginTop: 12,
-    color: colors.text,
-    fontSize: 15,
-    lineHeight: 23,
-  },
-  secondaryRow: {
-    flexDirection: 'row',
-    gap: 10,
-    marginTop: 12,
-  },
-  secondaryAction: {
-    flex: 1,
-    height: 46,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: 23,
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
-  secondaryActionText: {
-    color: colors.text,
-    fontSize: 14,
-    fontWeight: '800',
-  },
-  processButton: {
-    height: 52,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 9,
-    borderRadius: 26,
-    backgroundColor: colors.cyan,
-    marginTop: 16,
-  },
-  processText: {
-    color: colors.navy950,
-    fontSize: 16,
-    fontWeight: '900',
-  },
+  header: { paddingTop: 28, marginBottom: 18, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  iconButton: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center', borderRadius: 20, borderWidth: 1, borderColor: colors.border, backgroundColor: 'rgba(255,255,255,0.03)' },
+  hero: { marginBottom: 20 },
+  kicker: { color: colors.cyan, fontSize: 11, fontWeight: '900', letterSpacing: 3, textTransform: 'uppercase' },
+  heroTitle: { marginTop: 8, color: colors.text, fontSize: 50, lineHeight: 54, fontWeight: '900' },
+  heroCopy: { marginTop: 10, color: colors.muted, fontSize: 17, lineHeight: 24, fontWeight: '700' },
+  preview: { height: 410, overflow: 'hidden', borderRadius: 34, borderWidth: 1, borderColor: 'rgba(103,232,249,0.18)', backgroundColor: '#020713', shadowColor: colors.cyan, shadowOpacity: 0.12, shadowRadius: 24 },
+  previewBackground: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(2,7,19,0.72)' },
+  focusShade: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(2,7,19,0.18)' },
+  previewImage: { ...StyleSheet.absoluteFillObject, opacity: 0.96 },
+  corner: { position: 'absolute', width: 54, height: 54, borderColor: colors.cyan },
+  topLeft: { top: 22, left: 22, borderTopWidth: 2, borderLeftWidth: 2 },
+  topRight: { top: 22, right: 22, borderTopWidth: 2, borderRightWidth: 2 },
+  bottomLeft: { bottom: 22, left: 22, borderBottomWidth: 2, borderLeftWidth: 2 },
+  bottomRight: { right: 22, bottom: 22, borderRightWidth: 2, borderBottomWidth: 2 },
+  scanPrompt: { position: 'absolute', left: 26, right: 26, bottom: 28, borderRadius: 24, borderWidth: 1, borderColor: 'rgba(103,232,249,0.24)', backgroundColor: 'rgba(2,7,19,0.68)', padding: 18 },
+  scanPromptTitle: { marginTop: 10, color: colors.text, fontSize: 24, fontWeight: '900' },
+  scanPromptCopy: { marginTop: 6, color: colors.muted, fontSize: 14, lineHeight: 20, fontWeight: '700' },
+  processingOverlay: { ...StyleSheet.absoluteFillObject, alignItems: 'center', justifyContent: 'center', padding: 24, backgroundColor: 'rgba(2,7,19,0.78)' },
+  processingTitle: { marginTop: 12, color: colors.text, fontSize: 22, fontWeight: '900' },
+  processingCopy: { marginTop: 6, color: colors.muted, fontSize: 13, fontWeight: '700' },
+  captureDock: { marginTop: -36, alignSelf: 'center', flexDirection: 'row', alignItems: 'center', gap: 18, borderRadius: 42, borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)', backgroundColor: 'rgba(2,7,19,0.88)', paddingHorizontal: 18, paddingVertical: 12 },
+  shutter: { width: 76, height: 76, alignItems: 'center', justifyContent: 'center', borderRadius: 38, backgroundColor: colors.cyan, shadowColor: colors.cyan, shadowOpacity: 0.45, shadowRadius: 18 },
+  shutterInner: { width: 58, height: 58, alignItems: 'center', justifyContent: 'center', borderRadius: 29, backgroundColor: 'rgba(255,255,255,0.34)' },
+  uploadMini: { width: 76, alignItems: 'center', justifyContent: 'center', gap: 5 },
+  uploadMiniText: { color: colors.text, fontSize: 12, fontWeight: '900' },
+  notice: { marginTop: 14, color: colors.dim, fontSize: 13, lineHeight: 19, textAlign: 'center', fontWeight: '700' },
+  error: { marginTop: 12, color: colors.danger, fontWeight: '900', textAlign: 'center' },
+  inspirationCard: { marginTop: 18, marginBottom: 110 },
+  label: { color: colors.dim, fontSize: 10, fontWeight: '900', letterSpacing: 2.4, textTransform: 'uppercase' },
+  ideaGrid: { marginTop: 14, flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
+  ideaTile: { width: '47.5%', minHeight: 74, borderRadius: 20, borderWidth: 1, borderColor: colors.border, backgroundColor: 'rgba(255,255,255,0.03)', padding: 14, justifyContent: 'space-between' },
+  ideaText: { color: colors.text, fontSize: 15, fontWeight: '900' },
+  resultCard: { marginTop: 18, marginBottom: 110 },
+  resultHeader: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: 14 },
+  resultTitle: { marginTop: 6, color: colors.text, fontSize: 24, fontWeight: '900' },
+  totalPill: { alignItems: 'flex-end', borderRadius: 18, borderWidth: 1, borderColor: 'rgba(103,232,249,0.26)', paddingHorizontal: 12, paddingVertical: 10 },
+  totalLabel: { color: colors.dim, fontSize: 10, fontWeight: '900' },
+  totalValue: { marginTop: 4, color: colors.cyan, fontSize: 18, fontWeight: '900' },
+  input: { minHeight: 130, marginTop: 16, color: colors.text, fontSize: 16, lineHeight: 24, textAlignVertical: 'top', borderTopWidth: 1, borderTopColor: colors.border, paddingTop: 14 },
+  translatedText: { marginTop: 12, color: colors.muted, fontSize: 15, lineHeight: 22, fontWeight: '700' },
+  processButton: { height: 54, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 9, borderRadius: 27, backgroundColor: colors.cyan, marginTop: 16 },
+  processText: { color: colors.navy950, fontSize: 16, fontWeight: '900' },
 });
