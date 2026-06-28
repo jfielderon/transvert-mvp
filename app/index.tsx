@@ -1,10 +1,13 @@
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { router } from 'expo-router';
+import { useEffect, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { GlobalBackdrop } from '@/components/GlobalBackdrop';
 import { PolicyFooter } from '@/components/PolicyFooter';
 import { Screen } from '@/components/Screen';
+import { completeRedirectSignIn, firstNameFromProfile } from '@/services/auth/supabaseAuth';
+import { getAppProfile, type AppProfile } from '@/storage/appProfile';
 import { colors } from '@/theme/colors';
 
 const intelligence = [
@@ -14,6 +17,18 @@ const intelligence = [
 ] as const;
 
 export default function HomeScreen() {
+  const [profile, setProfile] = useState<AppProfile | null>(null);
+
+  useEffect(() => {
+    (async () => {
+      const existing = await getAppProfile();
+      const redirected = await completeRedirectSignIn(existing ?? undefined);
+      setProfile(redirected ?? existing);
+    })();
+  }, []);
+
+  const firstName = firstNameFromProfile(profile);
+
   return (
     <Screen>
       <View style={styles.header}>
@@ -21,11 +36,14 @@ export default function HomeScreen() {
           <View style={styles.brandMark}>
             <Text style={styles.markText}>T</Text>
           </View>
-          <Text style={styles.brand}>Transvert</Text>
+          <View>
+            <Text style={styles.brand}>Transvert</Text>
+            {firstName ? <Text style={styles.greeting}>Hi, {firstName}</Text> : null}
+          </View>
         </View>
         <View style={styles.headerActions}>
           <Pressable style={styles.signInButton} onPress={() => router.push('/sign-in')}>
-            <Text style={styles.signInText}>Sign in</Text>
+            <Text style={styles.signInText}>{firstName ? 'Profile' : 'Sign in'}</Text>
           </Pressable>
           <Pressable style={styles.headerIcon} onPress={() => router.push('/settings')}>
             <Ionicons name="settings-outline" color={colors.muted} size={18} />
@@ -38,7 +56,7 @@ export default function HomeScreen() {
         <View style={styles.heroCopy}>
           <Text style={styles.eyebrow}>GLOBAL PURCHASE INTELLIGENCE</Text>
           <Text style={styles.title}>SEE IT. SCAN IT. KNOW IT.</Text>
-          <Text style={styles.subtitle}>Understand what you are buying anywhere in the world.</Text>
+          <Text style={styles.subtitle}>{firstName ? `Ready for your next trip, ${firstName}?` : 'Understand what you are buying anywhere in the world.'}</Text>
         </View>
         <Pressable style={styles.scanButton} onPress={() => router.push('/scan')}>
           <LinearGradient colors={[colors.cyan, '#b7f7ff']} style={styles.scanButtonFill}>
@@ -99,6 +117,7 @@ const styles = StyleSheet.create({
   brandMark: { width: 34, height: 34, alignItems: 'center', justifyContent: 'center', borderRadius: 9, borderWidth: 1, borderColor: colors.borderStrong, backgroundColor: 'rgba(255,255,255,0.04)' },
   markText: { color: colors.text, fontSize: 20, fontWeight: '700' },
   brand: { color: colors.text, fontSize: 19, fontWeight: '700' },
+  greeting: { marginTop: 2, color: colors.cyan, fontSize: 12, fontWeight: '800' },
   headerIcon: { width: 38, height: 38, alignItems: 'center', justifyContent: 'center', borderRadius: 19, borderWidth: 1, borderColor: colors.border },
   hero: { minHeight: 486, justifyContent: 'flex-end', overflow: 'hidden', marginHorizontal: -22, marginTop: 12, paddingHorizontal: 22, paddingBottom: 24 },
   heroCopy: { maxWidth: 330 },
