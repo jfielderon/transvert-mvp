@@ -36,7 +36,8 @@ export async function POST(request: Request) {
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
-      from: 'Transvert <hello@transvert.app>',
+      from: 'Transvert by Optima <enquires@optimacommercial.co.uk>',
+      reply_to: 'enquires@optimacommercial.co.uk',
       to: email,
       subject: template.subject,
       html: template.html,
