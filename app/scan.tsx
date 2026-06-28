@@ -15,13 +15,7 @@ import { translateMenuText } from '@/services/translate';
 import { saveScan } from '@/storage/scans';
 import { colors } from '@/theme/colors';
 
-type SelectedImage = {
-  uri: string;
-  base64?: string;
-  mimeType?: string;
-  imageUrl?: string;
-};
-
+type SelectedImage = { uri: string; base64?: string; mimeType?: string; imageUrl?: string };
 type PipelineSource = 'camera' | 'library' | 'manual';
 
 const scanIdeas = [
@@ -33,7 +27,6 @@ const scanIdeas = [
 
 export default function ScanScreen() {
   const [imageUri, setImageUri] = useState<string | null>(null);
-  const [selectedImage, setSelectedImage] = useState<SelectedImage | null>(null);
   const [text, setText] = useState('');
   const [ocrStatus, setOcrStatus] = useState<'success' | 'fallback' | 'failed'>('fallback');
   const [isPicking, setIsPicking] = useState(false);
@@ -44,75 +37,61 @@ export default function ScanScreen() {
   const [error, setError] = useState<string | null>(null);
   const [rates, setRates] = useState<FxRates>(getRateSnapshot().rates);
 
-  useEffect(() => {
-    loadFxRates().then((snapshot) => setRates(snapshot.rates));
-  }, []);
+  useEffect(() => { loadFxRates().then((snapshot) => setRates(snapshot.rates)); }, []);
 
   const prices = useMemo(() => detectPricesWithRates(text, rates, 'menu'), [rates, text]);
   const total = useMemo(() => totalGbp(prices), [prices]);
   const translated = useMemo(() => translateMenuText(text), [text]);
 
-  const runPipeline = useCallback(
-    async ({ image, manualText, source }: { image?: SelectedImage; manualText?: string; source: PipelineSource }) => {
-      try {
-        setIsProcessing(true);
-        setError(null);
-        setPipelineState(source === 'manual' ? 'Reading text' : 'Reading image');
-        setNotice('Scanning, translating and converting...');
+  const runPipeline = useCallback(async ({ image, manualText, source }: { image?: SelectedImage; manualText?: string; source: PipelineSource }) => {
+    try {
+      setIsProcessing(true);
+      setError(null);
+      setPipelineState(source === 'manual' ? 'Reading text' : 'Reading image');
+      setNotice('Scanning, translating and converting...');
 
-        let workingText = manualText?.trim() ?? '';
-        let workingOcrStatus: 'success' | 'fallback' | 'failed' = source === 'manual' ? 'fallback' : ocrStatus;
-        let savedImageUri = image?.uri ?? imageUri ?? undefined;
+      let workingText = manualText?.trim() ?? '';
+      let workingOcrStatus: 'success' | 'fallback' | 'failed' = source === 'manual' ? 'fallback' : ocrStatus;
+      let savedImageUri = image?.uri ?? imageUri ?? undefined;
 
-        if (image) {
-          setPipelineState('Preparing image');
-          const upload = await uploadOcrImageToSupabase(image);
-          const ocrInput = {
-            uri: image.uri,
-            imageUrl: upload.input.imageUrl,
-            base64: upload.input.imageUrl ? undefined : image.base64,
-            mimeType: image.mimeType,
-          };
-          savedImageUri = upload.input.imageUrl ?? image.uri;
-          if (upload.warnings[0]) setNotice(upload.warnings[0]);
+      if (image) {
+        setPipelineState('Preparing image');
+        const upload = await uploadOcrImageToSupabase(image);
+        const ocrInput = {
+          uri: image.uri,
+          imageUrl: upload.input.imageUrl,
+          base64: upload.input.imageUrl ? undefined : image.base64,
+          mimeType: image.mimeType,
+        };
+        savedImageUri = upload.input.imageUrl ?? image.uri;
+        if (upload.warnings[0]) setNotice(upload.warnings[0]);
 
-          setPipelineState('Reading image');
-          const ocr = await prepareImageForManualText(ocrInput);
-          workingText = ocr.text.trim();
-          workingOcrStatus = ocr.status;
-          setText(workingText);
-          setOcrStatus(ocr.status);
-          setNotice(ocr.warnings[0] ?? (workingText ? 'Text found. Building your result...' : 'No readable text found.'));
+        setPipelineState('Reading image');
+        const ocr = await prepareImageForManualText(ocrInput);
+        workingText = ocr.text.trim();
+        workingOcrStatus = ocr.status;
+        setText(workingText);
+        setOcrStatus(ocr.status);
+        setNotice(ocr.warnings[0] ?? (workingText ? 'Text found. Building your result...' : 'No readable text found.'));
 
-          if (ocr.status === 'failed' && !workingText) {
-            throw new Error(ocr.warnings[0] ?? 'OCR failed. Try a clearer, closer image.');
-          }
-        }
-
-        if (!workingText) throw new Error('No readable text found. Try a closer image or paste the text manually.');
-
-        setPipelineState('Building result');
-        const scanRecord = await processScanInput({
-          text: workingText,
-          imageUri: savedImageUri,
-          source,
-          ocrStatus: workingOcrStatus,
-          mode: 'menu',
-        });
-
-        setPipelineState('Saving');
-        await saveScan(scanRecord);
-        router.push({ pathname: '/results', params: { id: scanRecord.id } });
-      } catch (processError) {
-        setError(processError instanceof Error ? processError.message : 'Could not process scan.');
-        setPipelineState('Needs review');
-        setNotice('Try a clearer photo, upload again, or paste the text manually.');
-      } finally {
-        setIsProcessing(false);
+        if (ocr.status === 'failed' && !workingText) throw new Error(ocr.warnings[0] ?? 'OCR failed. Try a clearer, closer image.');
       }
-    },
-    [imageUri, ocrStatus]
-  );
+
+      if (!workingText) throw new Error('No readable text found. Try a closer image or paste the text manually.');
+
+      setPipelineState('Building result');
+      const scanRecord = await processScanInput({ text: workingText, imageUri: savedImageUri, source, ocrStatus: workingOcrStatus, mode: 'menu' });
+      setPipelineState('Saving');
+      await saveScan(scanRecord);
+      router.push({ pathname: '/results', params: { id: scanRecord.id } });
+    } catch (processError) {
+      setError(processError instanceof Error ? processError.message : 'Could not process scan.');
+      setPipelineState('Needs review');
+      setNotice('Try a clearer photo, upload again, or paste the text manually.');
+    } finally {
+      setIsProcessing(false);
+    }
+  }, [imageUri, ocrStatus]);
 
   const uploadImage = useCallback(async () => {
     setError(null);
@@ -124,7 +103,6 @@ export default function ScanScreen() {
       if (result.canceled || !result.assets[0]?.uri) return;
       const asset = result.assets[0];
       const image = { uri: asset.uri, base64: asset.base64 ?? undefined, mimeType: asset.mimeType ?? undefined };
-      setSelectedImage(image);
       setImageUri(image.uri);
       setText('');
       setOcrStatus('fallback');
@@ -147,7 +125,6 @@ export default function ScanScreen() {
       if (result.canceled || !result.assets[0]?.uri) return;
       const asset = result.assets[0];
       const image = { uri: asset.uri, base64: asset.base64 ?? undefined, mimeType: asset.mimeType ?? undefined };
-      setSelectedImage(image);
       setImageUri(image.uri);
       setText('');
       setOcrStatus('fallback');
@@ -161,7 +138,6 @@ export default function ScanScreen() {
   }, [runPipeline]);
 
   const useExample = () => {
-    setSelectedImage(null);
     setImageUri(null);
     setText(SAMPLE_INPUT_PLACEHOLDER);
     setOcrStatus('fallback');
@@ -172,7 +148,6 @@ export default function ScanScreen() {
 
   const clearText = () => {
     setText('');
-    setSelectedImage(null);
     setImageUri(null);
     setOcrStatus('fallback');
     setPipelineState('Ready');
@@ -183,18 +158,14 @@ export default function ScanScreen() {
   return (
     <Screen>
       <View style={styles.header}>
-        <Pressable style={styles.iconButton} onPress={() => router.back()}>
-          <Ionicons name="chevron-back" color={colors.text} size={20} />
-        </Pressable>
-        <Pressable style={styles.iconButton} onPress={clearText}>
-          <Ionicons name="refresh-outline" color={colors.muted} size={18} />
-        </Pressable>
+        <Pressable style={styles.iconButton} onPress={() => router.back()}><Ionicons name="chevron-back" color={colors.text} size={20} /></Pressable>
+        <Pressable style={styles.iconButton} onPress={clearText}><Ionicons name="refresh-outline" color={colors.muted} size={18} /></Pressable>
       </View>
 
       <View style={styles.hero}>
         <Text style={styles.kicker}>Transvert Lens</Text>
         <Text style={styles.heroTitle}>Scan away.</Text>
-        <Text style={styles.heroCopy}>See it. Translate it. Know what it costs.</Text>
+        <Text style={styles.heroCopy}>Translate menus. Understand signs. Convert prices.</Text>
       </View>
 
       <View style={styles.preview}>
@@ -206,9 +177,9 @@ export default function ScanScreen() {
         <View style={[styles.corner, styles.bottomRight]} />
         {!imageUri && !isProcessing ? (
           <View style={styles.scanPrompt}>
-            <MaterialCommunityIcons name="line-scan" color={colors.cyan} size={34} />
-            <Text style={styles.scanPromptTitle}>Point at anything</Text>
-            <Text style={styles.scanPromptCopy}>Menus, signs, receipts, prices and labels.</Text>
+            <MaterialCommunityIcons name="line-scan" color={colors.cyan} size={26} />
+            <Text style={styles.scanPromptTitle}>Point and scan</Text>
+            <Text style={styles.scanPromptCopy}>Menus, signs, receipts and labels.</Text>
           </View>
         ) : null}
         {isProcessing ? (
@@ -221,16 +192,16 @@ export default function ScanScreen() {
       </View>
 
       <View style={styles.captureDock}>
-        <Pressable style={styles.uploadMini} onPress={uploadImage} disabled={isPicking || isProcessing}>
+        <Pressable style={styles.dockButton} onPress={uploadImage} disabled={isPicking || isProcessing}>
           {isPicking ? <ActivityIndicator color={colors.text} size="small" /> : <Ionicons name="images-outline" color={colors.text} size={20} />}
-          <Text style={styles.uploadMiniText}>Upload</Text>
+          <Text style={styles.dockText}>Gallery</Text>
         </Pressable>
         <Pressable style={styles.shutter} onPress={enableCamera} disabled={isCapturing || isProcessing}>
-          {isCapturing ? <ActivityIndicator color={colors.navy950} /> : <View style={styles.shutterInner}><Ionicons name="camera" color={colors.navy950} size={26} /></View>}
+          {isCapturing ? <ActivityIndicator color={colors.navy950} /> : <Ionicons name="camera" color={colors.navy950} size={27} />}
         </Pressable>
-        <Pressable style={styles.uploadMini} onPress={useExample} disabled={isProcessing}>
+        <Pressable style={styles.dockButton} onPress={useExample} disabled={isProcessing}>
           <Ionicons name="sparkles-outline" color={colors.text} size={20} />
-          <Text style={styles.uploadMiniText}>Demo</Text>
+          <Text style={styles.dockText}>Demo</Text>
         </Pressable>
       </View>
 
@@ -240,39 +211,15 @@ export default function ScanScreen() {
       {!text.trim() ? (
         <GlassCard style={styles.inspirationCard}>
           <Text style={styles.label}>What can I scan?</Text>
-          <View style={styles.ideaGrid}>
-            {scanIdeas.map((idea) => (
-              <View key={idea.label} style={styles.ideaTile}>
-                <Ionicons name={idea.icon} color={colors.cyan} size={18} />
-                <Text style={styles.ideaText}>{idea.label}</Text>
-              </View>
-            ))}
-          </View>
+          <View style={styles.ideaGrid}>{scanIdeas.map((idea) => <View key={idea.label} style={styles.ideaTile}><Ionicons name={idea.icon} color={colors.cyan} size={17} /><Text style={styles.ideaText}>{idea.label}</Text></View>)}</View>
         </GlassCard>
       ) : (
         <GlassCard style={styles.resultCard}>
           <View style={styles.resultHeader}>
-            <View>
-              <Text style={styles.label}>Ready to build</Text>
-              <Text style={styles.resultTitle}>{prices.length ? `${prices.length} prices found` : 'Text captured'}</Text>
-            </View>
-            <View style={styles.totalPill}>
-              <Text style={styles.totalLabel}>GBP</Text>
-              <Text style={styles.totalValue}>{prices.length ? formatGbp(total) : '—'}</Text>
-            </View>
+            <View><Text style={styles.label}>Ready to build</Text><Text style={styles.resultTitle}>{prices.length ? `${prices.length} prices found` : 'Text captured'}</Text></View>
+            <View style={styles.totalPill}><Text style={styles.totalLabel}>GBP</Text><Text style={styles.totalValue}>{prices.length ? formatGbp(total) : '—'}</Text></View>
           </View>
-          <TextInput
-            value={text}
-            onChangeText={(value) => {
-              setText(value);
-              setError(null);
-              setPipelineState(value.trim() ? 'Ready to process text' : 'Ready');
-            }}
-            multiline
-            placeholder="Paste text here if you need to fix the scan."
-            placeholderTextColor={colors.dim}
-            style={styles.input}
-          />
+          <TextInput value={text} onChangeText={(value) => { setText(value); setError(null); setPipelineState(value.trim() ? 'Ready to process text' : 'Ready'); }} multiline placeholder="Paste text here if you need to fix the scan." placeholderTextColor={colors.dim} style={styles.input} />
           {!!translated && <Text style={styles.translatedText} numberOfLines={4}>{translated}</Text>}
           <Pressable style={styles.processButton} onPress={() => runPipeline({ manualText: text, source: 'manual' })} disabled={isProcessing}>
             {isProcessing ? <ActivityIndicator color={colors.navy950} /> : <Text style={styles.processText}>Build result</Text>}
@@ -285,47 +232,46 @@ export default function ScanScreen() {
 }
 
 const styles = StyleSheet.create({
-  header: { paddingTop: 28, marginBottom: 18, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  iconButton: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center', borderRadius: 20, borderWidth: 1, borderColor: colors.border, backgroundColor: 'rgba(255,255,255,0.03)' },
-  hero: { marginBottom: 20 },
-  kicker: { color: colors.cyan, fontSize: 11, fontWeight: '900', letterSpacing: 3, textTransform: 'uppercase' },
-  heroTitle: { marginTop: 8, color: colors.text, fontSize: 50, lineHeight: 54, fontWeight: '900' },
-  heroCopy: { marginTop: 10, color: colors.muted, fontSize: 17, lineHeight: 24, fontWeight: '700' },
-  preview: { height: 410, overflow: 'hidden', borderRadius: 34, borderWidth: 1, borderColor: 'rgba(103,232,249,0.18)', backgroundColor: '#020713', shadowColor: colors.cyan, shadowOpacity: 0.12, shadowRadius: 24 },
+  header: { paddingTop: 18, marginBottom: 10, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  iconButton: { width: 38, height: 38, alignItems: 'center', justifyContent: 'center', borderRadius: 19, borderWidth: 1, borderColor: colors.border, backgroundColor: 'rgba(255,255,255,0.03)' },
+  hero: { marginBottom: 14 },
+  kicker: { color: colors.cyan, fontSize: 10, fontWeight: '900', letterSpacing: 3, textTransform: 'uppercase' },
+  heroTitle: { marginTop: 6, color: colors.text, fontSize: 42, lineHeight: 44, fontWeight: '900' },
+  heroCopy: { marginTop: 8, color: colors.muted, fontSize: 15, lineHeight: 21, fontWeight: '800' },
+  preview: { height: 310, overflow: 'hidden', borderRadius: 28, borderWidth: 1, borderColor: 'rgba(103,232,249,0.18)', backgroundColor: '#020713', shadowColor: colors.cyan, shadowOpacity: 0.1, shadowRadius: 18 },
   previewBackground: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(2,7,19,0.72)' },
-  focusShade: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(2,7,19,0.18)' },
+  focusShade: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(2,7,19,0.12)' },
   previewImage: { ...StyleSheet.absoluteFillObject, opacity: 0.96 },
-  corner: { position: 'absolute', width: 54, height: 54, borderColor: colors.cyan },
-  topLeft: { top: 22, left: 22, borderTopWidth: 2, borderLeftWidth: 2 },
-  topRight: { top: 22, right: 22, borderTopWidth: 2, borderRightWidth: 2 },
-  bottomLeft: { bottom: 22, left: 22, borderBottomWidth: 2, borderLeftWidth: 2 },
-  bottomRight: { right: 22, bottom: 22, borderRightWidth: 2, borderBottomWidth: 2 },
-  scanPrompt: { position: 'absolute', left: 26, right: 26, bottom: 28, borderRadius: 24, borderWidth: 1, borderColor: 'rgba(103,232,249,0.24)', backgroundColor: 'rgba(2,7,19,0.68)', padding: 18 },
-  scanPromptTitle: { marginTop: 10, color: colors.text, fontSize: 24, fontWeight: '900' },
-  scanPromptCopy: { marginTop: 6, color: colors.muted, fontSize: 14, lineHeight: 20, fontWeight: '700' },
-  processingOverlay: { ...StyleSheet.absoluteFillObject, alignItems: 'center', justifyContent: 'center', padding: 24, backgroundColor: 'rgba(2,7,19,0.78)' },
-  processingTitle: { marginTop: 12, color: colors.text, fontSize: 22, fontWeight: '900' },
+  corner: { position: 'absolute', width: 40, height: 40, borderColor: colors.cyan },
+  topLeft: { top: 18, left: 18, borderTopWidth: 1.5, borderLeftWidth: 1.5 },
+  topRight: { top: 18, right: 18, borderTopWidth: 1.5, borderRightWidth: 1.5 },
+  bottomLeft: { bottom: 18, left: 18, borderBottomWidth: 1.5, borderLeftWidth: 1.5 },
+  bottomRight: { right: 18, bottom: 18, borderRightWidth: 1.5, borderBottomWidth: 1.5 },
+  scanPrompt: { position: 'absolute', left: 22, right: 22, bottom: 22, borderRadius: 22, borderWidth: 1, borderColor: 'rgba(103,232,249,0.22)', backgroundColor: 'rgba(2,7,19,0.7)', padding: 15 },
+  scanPromptTitle: { marginTop: 8, color: colors.text, fontSize: 22, fontWeight: '900' },
+  scanPromptCopy: { marginTop: 4, color: colors.muted, fontSize: 13, lineHeight: 18, fontWeight: '700' },
+  processingOverlay: { ...StyleSheet.absoluteFillObject, alignItems: 'center', justifyContent: 'center', padding: 22, backgroundColor: 'rgba(2,7,19,0.78)' },
+  processingTitle: { marginTop: 12, color: colors.text, fontSize: 21, fontWeight: '900' },
   processingCopy: { marginTop: 6, color: colors.muted, fontSize: 13, fontWeight: '700' },
-  captureDock: { marginTop: -36, alignSelf: 'center', flexDirection: 'row', alignItems: 'center', gap: 18, borderRadius: 42, borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)', backgroundColor: 'rgba(2,7,19,0.88)', paddingHorizontal: 18, paddingVertical: 12 },
-  shutter: { width: 76, height: 76, alignItems: 'center', justifyContent: 'center', borderRadius: 38, backgroundColor: colors.cyan, shadowColor: colors.cyan, shadowOpacity: 0.45, shadowRadius: 18 },
-  shutterInner: { width: 58, height: 58, alignItems: 'center', justifyContent: 'center', borderRadius: 29, backgroundColor: 'rgba(255,255,255,0.34)' },
-  uploadMini: { width: 76, alignItems: 'center', justifyContent: 'center', gap: 5 },
-  uploadMiniText: { color: colors.text, fontSize: 12, fontWeight: '900' },
-  notice: { marginTop: 14, color: colors.dim, fontSize: 13, lineHeight: 19, textAlign: 'center', fontWeight: '700' },
-  error: { marginTop: 12, color: colors.danger, fontWeight: '900', textAlign: 'center' },
-  inspirationCard: { marginTop: 18, marginBottom: 110 },
-  label: { color: colors.dim, fontSize: 10, fontWeight: '900', letterSpacing: 2.4, textTransform: 'uppercase' },
-  ideaGrid: { marginTop: 14, flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
-  ideaTile: { width: '47.5%', minHeight: 74, borderRadius: 20, borderWidth: 1, borderColor: colors.border, backgroundColor: 'rgba(255,255,255,0.03)', padding: 14, justifyContent: 'space-between' },
-  ideaText: { color: colors.text, fontSize: 15, fontWeight: '900' },
-  resultCard: { marginTop: 18, marginBottom: 110 },
+  captureDock: { marginTop: 12, alignSelf: 'center', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 18, borderRadius: 34, borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)', backgroundColor: 'rgba(2,7,19,0.88)', paddingHorizontal: 18, paddingVertical: 9, minWidth: 282 },
+  shutter: { width: 60, height: 60, alignItems: 'center', justifyContent: 'center', borderRadius: 30, backgroundColor: colors.cyan, shadowColor: colors.cyan, shadowOpacity: 0.38, shadowRadius: 14 },
+  dockButton: { width: 70, alignItems: 'center', justifyContent: 'center', gap: 4 },
+  dockText: { color: colors.text, fontSize: 11, fontWeight: '900' },
+  notice: { marginTop: 10, color: colors.dim, fontSize: 12, lineHeight: 17, textAlign: 'center', fontWeight: '700' },
+  error: { marginTop: 10, color: colors.danger, fontWeight: '900', textAlign: 'center' },
+  inspirationCard: { marginTop: 12, marginBottom: 118, paddingVertical: 14 },
+  label: { color: colors.dim, fontSize: 10, fontWeight: '900', letterSpacing: 2.2, textTransform: 'uppercase' },
+  ideaGrid: { marginTop: 12, flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  ideaTile: { width: '48%', minHeight: 58, borderRadius: 17, borderWidth: 1, borderColor: colors.border, backgroundColor: 'rgba(255,255,255,0.03)', padding: 12, justifyContent: 'space-between' },
+  ideaText: { color: colors.text, fontSize: 14, fontWeight: '900' },
+  resultCard: { marginTop: 12, marginBottom: 118 },
   resultHeader: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: 14 },
-  resultTitle: { marginTop: 6, color: colors.text, fontSize: 24, fontWeight: '900' },
-  totalPill: { alignItems: 'flex-end', borderRadius: 18, borderWidth: 1, borderColor: 'rgba(103,232,249,0.26)', paddingHorizontal: 12, paddingVertical: 10 },
+  resultTitle: { marginTop: 6, color: colors.text, fontSize: 22, fontWeight: '900' },
+  totalPill: { alignItems: 'flex-end', borderRadius: 17, borderWidth: 1, borderColor: 'rgba(103,232,249,0.26)', paddingHorizontal: 12, paddingVertical: 9 },
   totalLabel: { color: colors.dim, fontSize: 10, fontWeight: '900' },
-  totalValue: { marginTop: 4, color: colors.cyan, fontSize: 18, fontWeight: '900' },
-  input: { minHeight: 130, marginTop: 16, color: colors.text, fontSize: 16, lineHeight: 24, textAlignVertical: 'top', borderTopWidth: 1, borderTopColor: colors.border, paddingTop: 14 },
-  translatedText: { marginTop: 12, color: colors.muted, fontSize: 15, lineHeight: 22, fontWeight: '700' },
-  processButton: { height: 54, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 9, borderRadius: 27, backgroundColor: colors.cyan, marginTop: 16 },
-  processText: { color: colors.navy950, fontSize: 16, fontWeight: '900' },
+  totalValue: { marginTop: 4, color: colors.cyan, fontSize: 17, fontWeight: '900' },
+  input: { minHeight: 120, marginTop: 14, color: colors.text, fontSize: 16, lineHeight: 23, textAlignVertical: 'top', borderTopWidth: 1, borderTopColor: colors.border, paddingTop: 12 },
+  translatedText: { marginTop: 10, color: colors.muted, fontSize: 14, lineHeight: 20, fontWeight: '700' },
+  processButton: { height: 52, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 9, borderRadius: 26, backgroundColor: colors.cyan, marginTop: 14 },
+  processText: { color: colors.navy950, fontSize: 15, fontWeight: '900' },
 });
