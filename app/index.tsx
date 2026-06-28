@@ -21,6 +21,14 @@ function nextRoute(profile: AppProfile | null) {
   return profile.onboardingComplete ? '/scan' : '/onboarding';
 }
 
+function friendlyAuthError(error: unknown) {
+  const message = error instanceof Error ? error.message : 'Could not start sign-in.';
+  if (/load failed|failed to fetch|network request failed/i.test(message)) {
+    return 'Supabase connection failed. Check Vercel EXPO_PUBLIC_SUPABASE_URL is the full project URL starting https:// and ending .supabase.co, then redeploy.';
+  }
+  return message;
+}
+
 export default function EntryScreen() {
   const [profile, setProfile] = useState<AppProfile | null>(null);
   const [contact, setContact] = useState('');
@@ -91,7 +99,7 @@ export default function EntryScreen() {
       });
       startOAuth(provider);
     } catch (authError) {
-      setError(authError instanceof Error ? authError.message : 'Could not start sign-in.');
+      setError(friendlyAuthError(authError));
     } finally {
       setIsSubmitting(false);
     }
@@ -177,7 +185,7 @@ const styles = StyleSheet.create({
   card: { gap: 12 },
   label: { color: colors.dim, fontSize: 11, fontWeight: '900', letterSpacing: 2, textTransform: 'uppercase' },
   input: { height: 54, borderRadius: 17, borderWidth: 1, borderColor: colors.border, color: colors.text, paddingHorizontal: 16, fontSize: 16, fontWeight: '700', backgroundColor: 'rgba(255,255,255,0.04)' },
-  error: { color: colors.danger, fontSize: 12, fontWeight: '800' },
+  error: { color: colors.danger, fontSize: 12, fontWeight: '800', lineHeight: 18 },
   success: { color: colors.success, fontSize: 12, fontWeight: '800', lineHeight: 18 },
   primary: { height: 54, borderRadius: 27, backgroundColor: colors.cyan, alignItems: 'center', justifyContent: 'center' },
   primaryText: { color: colors.navy950, fontSize: 15, fontWeight: '900' },
