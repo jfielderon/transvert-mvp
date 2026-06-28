@@ -18,8 +18,8 @@ function authBase() {
 }
 
 function appRedirectUrl() {
-  if (typeof window !== 'undefined') return window.location.origin;
-  return 'transvert://';
+  if (typeof window !== 'undefined') return `${window.location.origin}/sign-in`;
+  return 'transvert://sign-in';
 }
 
 function headers(accessToken?: string) {
@@ -45,9 +45,7 @@ export async function sendMagicLink(email: string) {
       create_user: true,
       should_create_user: true,
       type: 'magiclink',
-      options: {
-        email_redirect_to: appRedirectUrl(),
-      },
+      options: { email_redirect_to: appRedirectUrl() },
     }),
   });
 
@@ -61,10 +59,7 @@ export async function sendMagicLink(email: string) {
 
 export function startOAuth(provider: AuthProvider) {
   if (!hasAuthConfig()) throw new Error('Supabase Auth is not configured yet.');
-  const params = new URLSearchParams({
-    provider,
-    redirect_to: appRedirectUrl(),
-  });
+  const params = new URLSearchParams({ provider, redirect_to: appRedirectUrl() });
   const url = `${authBase()}/authorize?${params.toString()}`;
   if (typeof window !== 'undefined') {
     window.location.href = url;
@@ -110,6 +105,11 @@ export async function completeRedirectSignIn(existing?: Partial<AppProfile>) {
     accessToken: session.accessToken,
     refreshToken: session.refreshToken,
     avatarUrl: user?.user_metadata?.avatar_url,
+    homeCountry: existing?.homeCountry,
+    defaultCard: existing?.defaultCard,
+    preferredLanguage: existing?.preferredLanguage,
+    preferredCurrency: existing?.preferredCurrency,
+    onboardingComplete: existing?.onboardingComplete ?? false,
   };
   await saveAppProfile(profile);
   if (typeof window !== 'undefined') window.history.replaceState({}, document.title, window.location.pathname);
