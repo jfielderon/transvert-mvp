@@ -26,6 +26,12 @@ function publicKey() {
   return env.supabaseAnonKey ?? '';
 }
 
+function withApiKey(path: string) {
+  const key = publicKey();
+  const joiner = path.includes('?') ? '&' : '?';
+  return `${path}${joiner}apikey=${encodeURIComponent(key)}`;
+}
+
 function headers(accessToken?: string) {
   const key = publicKey();
   return {
@@ -39,10 +45,23 @@ export function hasAuthConfig() {
   return Boolean(env.supabaseUrl && publicKey());
 }
 
+function friendlySupabaseMessage(text: string) {
+  try {
+    const payload = JSON.parse(text);
+    const message = payload?.msg ?? payload?.message ?? payload?.error_description ?? payload?.error;
+    if (payload?.code === 'PGRST125' || /invalid path specified/i.test(message ?? '')) {
+      return 'Supabase URL is pointing at the REST API path. Set EXPO_PUBLIC_SUPABASE_URL to the project URL only, for example https://xqqkfoqpyntttslxbdxc.supabase.co, then redeploy.';
+    }
+    return message ?? 'Could not send sign-in email.';
+  } catch {
+    return text || 'Could not send sign-in email.';
+  }
+}
+
 export async function sendMagicLink(email: string) {
   if (!hasAuthConfig()) throw new Error('Supabase Auth is not configured yet. Add EXPO_PUBLIC_SUPABASE_URL and EXPO_PUBLIC_SUPABASE_ANON_KEY.');
 
-  const response = await fetch(`${authBase()}/otp`, {
+  const response = await fetch(withApiKey(`${authBase()}/otp`), {
     method: 'POST',
     headers: headers(),
     body: JSON.stringify({
@@ -55,15 +74,7 @@ export async function sendMagicLink(email: string) {
   });
 
   if (!response.ok) {
-    const text = await response.text().catch(() => '');
-    let message = 'Could not send sign-in email.';
-    try {
-      const payload = JSON.parse(text);
-      message = payload?.msg ?? payload?.message ?? payload?.error_description ?? payload?.error ?? message;
-    } catch {
-      if (text) message = text;
-    }
-    throw new Error(message);
+    throw new Error(friendlySupabaseMessage(await response.text().catch(() => '')));
   }
 
   return true;
@@ -97,7 +108,7 @@ function parseHashSession() {
 
 export async function fetchUser(accessToken: string): Promise<SupabaseUser | null> {
   if (!hasAuthConfig()) return null;
-  const response = await fetch(`${authBase()}/user`, {
+  const response = await fetch(withApiKey(`${authBase()}/user`), {
     method: 'GET',
     headers: headers(accessToken),
   });
