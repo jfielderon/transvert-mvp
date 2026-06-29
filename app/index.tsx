@@ -7,7 +7,7 @@ import { PolicyFooter } from '@/components/PolicyFooter';
 import { Screen } from '@/components/Screen';
 import { completeRedirectSignIn, firstNameFromProfile, sendMagicLink, startOAuth, type AuthProvider } from '@/services/auth/supabaseAuth';
 import { sendWelcomeAfterAuth } from '@/services/auth/welcomeAfterAuth';
-import { getAppProfile, saveAppProfile, type AppProfile } from '@/storage/appProfile';
+import { clearAppProfile, getAppProfile, saveAppProfile, type AppProfile } from '@/storage/appProfile';
 import { colors } from '@/theme/colors';
 
 type Provider = 'email' | AuthProvider | 'guest';
@@ -29,6 +29,11 @@ function friendlyAuthError(error: unknown) {
   return message;
 }
 
+function hasCompletedAuth(profile: AppProfile | null) {
+  if (!profile || profile.provider === 'guest') return false;
+  return Boolean(profile.userId || profile.onboardingComplete);
+}
+
 export default function EntryScreen() {
   const [profile, setProfile] = useState<AppProfile | null>(null);
   const [contact, setContact] = useState('');
@@ -43,13 +48,21 @@ export default function EntryScreen() {
       const existing = await getAppProfile();
       const redirected = await completeRedirectSignIn(existing ?? undefined);
       const active = redirected ?? existing;
-      setProfile(active);
+      if (hasCompletedAuth(active)) setProfile(active);
       if (redirected) {
         await sendWelcomeAfterAuth(redirected);
         router.replace(nextRoute(redirected));
       }
     })();
   }, []);
+
+  const resetProfile = async () => {
+    await clearAppProfile();
+    setProfile(null);
+    setContact('');
+    setError('');
+    setMessage('Sign in again to save scans and profile settings.');
+  };
 
   const continueWith = async (provider: Provider) => {
     const cleanContact = contact.trim().toLowerCase();
@@ -89,15 +102,7 @@ export default function EntryScreen() {
         return;
       }
 
-      await saveAppProfile({
-        contact: cleanContact,
-        provider,
-        updatesOptIn,
-        atmDataOptIn,
-        createdAt: new Date().toISOString(),
-        onboardingComplete: false,
-      });
-      startOAuth(provider);
+      await startOAuth(provider);
     } catch (authError) {
       setError(friendlyAuthError(authError));
     } finally {
@@ -106,7 +111,7 @@ export default function EntryScreen() {
   };
 
   const firstName = firstNameFromProfile(profile);
-  const hasProfile = Boolean(profile?.contact && profile.provider !== 'guest');
+  const hasProfile = hasCompletedAuth(profile);
 
   return (
     <Screen>
@@ -123,6 +128,9 @@ export default function EntryScreen() {
           <Text style={styles.muted}>Complete setup before scanning so prices, cards and ATM reports are linked correctly.</Text>
           <Pressable style={styles.primary} onPress={() => router.replace(nextRoute(profile))}>
             <Text style={styles.primaryText}>{profile?.onboardingComplete ? 'Open Transvert' : 'Complete account setup'}</Text>
+          </Pressable>
+          <Pressable style={styles.switchAccount} onPress={resetProfile}>
+            <Text style={styles.switchAccountText}>Not you? Sign in with another account</Text>
           </Pressable>
         </GlassCard>
       ) : (
@@ -199,4 +207,6 @@ const styles = StyleSheet.create({
   guestText: { color: colors.dim, fontSize: 13, fontWeight: '800' },
   welcome: { color: colors.text, fontSize: 28, fontWeight: '900' },
   muted: { color: colors.muted, fontSize: 14, lineHeight: 20 },
+  switchAccount: { alignItems: 'center', paddingTop: 4, paddingBottom: 2 },
+  switchAccountText: { color: colors.cyan, fontSize: 12, fontWeight: '900' },
 });
