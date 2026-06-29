@@ -82,12 +82,17 @@ export async function sendMagicLink(email: string) {
 
 export function startOAuth(provider: AuthProvider) {
   if (!hasAuthConfig()) throw new Error('Supabase Auth is not configured yet.');
+
   const params = new URLSearchParams({
     provider,
-    redirect_to: appRedirectUrl(),
     apikey: publicKey(),
   });
+
+  // Important: do not pass redirect_to here for web OAuth.
+  // Supabase should send Google its own /auth/v1/callback URL, then use the
+  // project Site URL / Redirect URLs configured in Supabase after auth.
   const url = `${authBase()}/authorize?${params.toString()}`;
+
   if (typeof window !== 'undefined') {
     window.location.href = url;
     return true;
