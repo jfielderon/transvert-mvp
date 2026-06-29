@@ -8,11 +8,17 @@ function withHttps(value?: string) {
 function supabaseProjectUrl(value?: string) {
   const url = withHttps(value);
   if (!url) return undefined;
-  return url
-    .replace(/\/+$/, '')
-    .replace(/\/rest\/v1$/i, '')
-    .replace(/\/auth\/v1$/i, '')
-    .replace(/\/storage\/v1$/i, '');
+
+  try {
+    const parsed = new URL(url);
+    return parsed.origin.replace(/\/+$/, '');
+  } catch {
+    return url
+      .replace(/\/+$/, '')
+      .replace(/\/rest\/v1.*$/i, '')
+      .replace(/\/auth\/v1.*$/i, '')
+      .replace(/\/storage\/v1.*$/i, '');
+  }
 }
 
 export const env = {
