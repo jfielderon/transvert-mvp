@@ -1,20 +1,17 @@
+import { createClient, type User } from '@supabase/supabase-js';
 import { env } from '@/config/env';
 import { saveAppProfile, type AppProfile } from '@/storage/appProfile';
 
 export type AuthProvider = 'google' | 'apple' | 'yahoo';
 
-type SupabaseUser = {
-  id?: string;
-  email?: string;
-  user_metadata?: {
-    name?: string;
-    full_name?: string;
-    avatar_url?: string;
-  };
-};
+let client: ReturnType<typeof createClient> | null = null;
 
-function authBase() {
-  return env.supabaseUrl ? `${env.supabaseUrl.replace(/\/$/, '')}/auth/v1` : '';
+function supabaseUrl() {
+  return env.supabaseUrl?.replace(/\/$/, '') ?? '';
+}
+
+function publicKey() {
+  return env.supabaseAnonKey ?? '';
 }
 
 function appRedirectUrl() {
@@ -22,128 +19,119 @@ function appRedirectUrl() {
   return 'transvert://sign-in';
 }
 
-function publicKey() {
-  return env.supabaseAnonKey ?? '';
-}
-
-function withApiKey(path: string) {
-  const key = publicKey();
-  const joiner = path.includes('?') ? '&' : '?';
-  return `${path}${joiner}apikey=${encodeURIComponent(key)}`;
-}
-
-function headers(accessToken?: string) {
-  const key = publicKey();
-  return {
-    apikey: key,
-    Authorization: accessToken ? `Bearer ${accessToken}` : `Bearer ${key}`,
-    'Content-Type': 'application/json',
-  };
+function getClient() {
+  if (!hasAuthConfig()) return null;
+  if (!client) {
+    client = createClient(supabaseUrl(), publicKey(), {
+      auth: {
+        autoRefreshToken: true,
+        detectSessionInUrl: true,
+        persistSession: false,
+      },
+    });
+  }
+  return client;
 }
 
 export function hasAuthConfig() {
-  return Boolean(env.supabaseUrl && publicKey());
+  return Boolean(supabaseUrl() && publicKey());
 }
 
-function friendlySupabaseMessage(text: string) {
-  try {
-    const payload = JSON.parse(text);
-    const message = payload?.msg ?? payload?.message ?? payload?.error_description ?? payload?.error;
-    if (payload?.code === 'PGRST125' || /invalid path specified/i.test(message ?? '')) {
-      return 'Supabase URL is pointing at the REST API path. Set EXPO_PUBLIC_SUPABASE_URL to the project URL only, for example https://xqqkfoqpyntttslxbdxc.supabase.co, then redeploy.';
-    }
-    return message ?? 'Could not send sign-in email.';
-  } catch {
-    return text || 'Could not send sign-in email.';
+function friendlySupabaseMessage(error?: { message?: string } | null) {
+  const message = error?.message ?? '';
+  if (/invalid path specified/i.test(message)) {
+    return 'Supabase URL is pointing at the REST API path. Set EXPO_PUBLIC_SUPABASE_URL to the project URL only, for example https://xqqkfoqpyntttslxbdxc.supabase.co, then redeploy.';
   }
+  return message || 'Could not complete sign-in.';
 }
 
 export async function sendMagicLink(email: string) {
-  if (!hasAuthConfig()) throw new Error('Supabase Auth is not configured yet. Add EXPO_PUBLIC_SUPABASE_URL and EXPO_PUBLIC_SUPABASE_ANON_KEY.');
+  const supabase = getClient();
+  if (!supabase) throw new Error('Supabase Auth is not configured yet. Add EXPO_PUBLIC_SUPABASE_URL and EXPO_PUBLIC_SUPABASE_ANON_KEY.');
 
-  const response = await fetch(withApiKey(`${authBase()}/otp`), {
-    method: 'POST',
-    headers: headers(),
-    body: JSON.stringify({
-      email,
-      create_user: true,
-      should_create_user: true,
-      type: 'magiclink',
-      options: { email_redirect_to: appRedirectUrl() },
-    }),
+  const { error } = await supabase.auth.signInWithOtp({
+    email,
+    options: {
+      shouldCreateUser: true,
+      emailRedirectTo: appRedirectUrl(),
+    },
   });
 
-  if (!response.ok) {
-    throw new Error(friendlySupabaseMessage(await response.text().catch(() => '')));
-  }
-
+  if (error) throw new Error(friendlySupabaseMessage(error));
   return true;
 }
 
-export function startOAuth(provider: AuthProvider) {
-  if (!hasAuthConfig()) throw new Error('Supabase Auth is not configured yet.');
+export async function startOAuth(provider: AuthProvider) {
+  const supabase = getClient();
+  if (!supabase) throw new Error('Supabase Auth is not configured yet.');
 
-  const params = new URLSearchParams({
+  const { data, error } = await supabase.auth.signInWithOAuth({
     provider,
-    apikey: publicKey(),
+    options: {
+      redirectTo: appRedirectUrl(),
+      skipBrowserRedirect: true,
+    },
   });
 
-  // Important: do not pass redirect_to here for web OAuth.
-  // Supabase should send Google its own /auth/v1/callback URL, then use the
-  // project Site URL / Redirect URLs configured in Supabase after auth.
-  const url = `${authBase()}/authorize?${params.toString()}`;
+  if (error) throw new Error(friendlySupabaseMessage(error));
 
-  if (typeof window !== 'undefined') {
-    window.location.href = url;
+  if (typeof window !== 'undefined' && data?.url) {
+    window.location.href = data.url;
     return true;
   }
-  return false;
+  return Boolean(data?.url);
 }
 
-function parseHashSession() {
-  if (typeof window === 'undefined') return null;
-  const hash = window.location.hash.replace(/^#/, '');
-  const query = window.location.search.replace(/^\?/, '');
-  const params = new URLSearchParams(hash || query);
-  const accessToken = params.get('access_token');
-  const refreshToken = params.get('refresh_token') ?? undefined;
-  if (!accessToken) return null;
-  return { accessToken, refreshToken };
-}
-
-export async function fetchUser(accessToken: string): Promise<SupabaseUser | null> {
-  if (!hasAuthConfig()) return null;
-  const response = await fetch(withApiKey(`${authBase()}/user`), {
-    method: 'GET',
-    headers: headers(accessToken),
-  });
-  if (!response.ok) return null;
-  return response.json();
-}
-
-export async function completeRedirectSignIn(existing?: Partial<AppProfile>) {
-  const session = parseHashSession();
-  if (!session?.accessToken) return null;
-  const user = await fetchUser(session.accessToken);
-  const name = user?.user_metadata?.full_name ?? user?.user_metadata?.name ?? user?.email?.split('@')[0];
-  const profile: AppProfile = {
-    contact: user?.email ?? existing?.contact ?? '',
+function userToProfile(user: User, existing?: Partial<AppProfile>): AppProfile {
+  const name = user.user_metadata?.full_name ?? user.user_metadata?.name ?? user.email?.split('@')[0];
+  return {
+    contact: user.email ?? existing?.contact ?? '',
     name,
     provider: existing?.provider ?? 'email',
     updatesOptIn: existing?.updatesOptIn ?? true,
     atmDataOptIn: existing?.atmDataOptIn ?? true,
     createdAt: existing?.createdAt ?? new Date().toISOString(),
-    userId: user?.id,
-    accessToken: session.accessToken,
-    refreshToken: session.refreshToken,
-    avatarUrl: user?.user_metadata?.avatar_url,
+    userId: user.id,
+    accessToken: undefined,
+    refreshToken: undefined,
+    avatarUrl: user.user_metadata?.avatar_url,
     homeCountry: existing?.homeCountry,
     defaultCard: existing?.defaultCard,
     preferredLanguage: existing?.preferredLanguage,
     preferredCurrency: existing?.preferredCurrency,
     onboardingComplete: existing?.onboardingComplete ?? false,
   };
+}
+
+export async function fetchUser(accessToken?: string): Promise<User | null> {
+  const supabase = getClient();
+  if (!supabase) return null;
+
+  const { data, error } = accessToken
+    ? await supabase.auth.getUser(accessToken)
+    : await supabase.auth.getUser();
+
+  if (error) return null;
+  return data.user ?? null;
+}
+
+export async function completeRedirectSignIn(existing?: Partial<AppProfile>) {
+  const supabase = getClient();
+  if (!supabase) return null;
+
+  if (typeof window !== 'undefined') {
+    const href = window.location.href;
+    if (href.includes('access_token=') || href.includes('refresh_token=') || href.includes('code=')) {
+      await supabase.auth.getSession();
+    }
+  }
+
+  const { data, error } = await supabase.auth.getUser();
+  if (error || !data.user) return null;
+
+  const profile = userToProfile(data.user, existing);
   await saveAppProfile(profile);
+
   if (typeof window !== 'undefined') window.history.replaceState({}, document.title, window.location.pathname);
   return profile;
 }
