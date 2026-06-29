@@ -33,7 +33,7 @@ export default function ScanScreen() {
   const [isCapturing, setIsCapturing] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [pipelineState, setPipelineState] = useState('Ready');
-  const [notice, setNotice] = useState('Point your camera at a menu, sign, receipt or label.');
+  const [notice, setNotice] = useState('Take a photo or upload a saved image.');
   const [error, setError] = useState<string | null>(null);
   const [rates, setRates] = useState<FxRates>(getRateSnapshot().rates);
 
@@ -142,7 +142,7 @@ export default function ScanScreen() {
     setText(SAMPLE_INPUT_PLACEHOLDER);
     setOcrStatus('fallback');
     setPipelineState('Example ready');
-    setNotice('Example loaded. Tap Build result.');
+    setNotice('Example text loaded. Tap Build result.');
     setError(null);
   };
 
@@ -151,7 +151,7 @@ export default function ScanScreen() {
     setImageUri(null);
     setOcrStatus('fallback');
     setPipelineState('Ready');
-    setNotice('Point your camera at a menu, sign, receipt or label.');
+    setNotice('Take a photo or upload a saved image.');
     setError(null);
   };
 
@@ -177,7 +177,7 @@ export default function ScanScreen() {
         <View style={[styles.corner, styles.bottomRight]} />
         {!imageUri && !isProcessing ? (
           <View style={styles.scanPrompt}>
-            <MaterialCommunityIcons name="line-scan" color={colors.cyan} size={26} />
+            <MaterialCommunityIcons name="line-scan" color={colors.cyan} size={25} />
             <Text style={styles.scanPromptTitle}>Point and scan</Text>
             <Text style={styles.scanPromptCopy}>Menus, signs, receipts and labels.</Text>
           </View>
@@ -194,14 +194,14 @@ export default function ScanScreen() {
       <View style={styles.captureDock}>
         <Pressable style={styles.dockButton} onPress={uploadImage} disabled={isPicking || isProcessing}>
           {isPicking ? <ActivityIndicator color={colors.text} size="small" /> : <Ionicons name="images-outline" color={colors.text} size={20} />}
-          <Text style={styles.dockText}>Gallery</Text>
+          <Text style={styles.dockText}>Upload</Text>
         </Pressable>
         <Pressable style={styles.shutter} onPress={enableCamera} disabled={isCapturing || isProcessing}>
           {isCapturing ? <ActivityIndicator color={colors.navy950} /> : <Ionicons name="camera" color={colors.navy950} size={27} />}
         </Pressable>
         <Pressable style={styles.dockButton} onPress={useExample} disabled={isProcessing}>
-          <Ionicons name="sparkles-outline" color={colors.text} size={20} />
-          <Text style={styles.dockText}>Demo</Text>
+          <Ionicons name="document-text-outline" color={colors.text} size={20} />
+          <Text style={styles.dockText}>Example</Text>
         </Pressable>
       </View>
 
@@ -232,34 +232,34 @@ export default function ScanScreen() {
 }
 
 const styles = StyleSheet.create({
-  header: { paddingTop: 18, marginBottom: 10, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  header: { paddingTop: 14, marginBottom: 8, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   iconButton: { width: 38, height: 38, alignItems: 'center', justifyContent: 'center', borderRadius: 19, borderWidth: 1, borderColor: colors.border, backgroundColor: 'rgba(255,255,255,0.03)' },
-  hero: { marginBottom: 14 },
+  hero: { marginBottom: 12 },
   kicker: { color: colors.cyan, fontSize: 10, fontWeight: '900', letterSpacing: 3, textTransform: 'uppercase' },
-  heroTitle: { marginTop: 6, color: colors.text, fontSize: 42, lineHeight: 44, fontWeight: '900' },
-  heroCopy: { marginTop: 8, color: colors.muted, fontSize: 15, lineHeight: 21, fontWeight: '800' },
-  preview: { height: 310, overflow: 'hidden', borderRadius: 28, borderWidth: 1, borderColor: 'rgba(103,232,249,0.18)', backgroundColor: '#020713', shadowColor: colors.cyan, shadowOpacity: 0.1, shadowRadius: 18 },
+  heroTitle: { marginTop: 4, color: colors.text, fontSize: 39, lineHeight: 41, fontWeight: '900' },
+  heroCopy: { marginTop: 7, color: colors.muted, fontSize: 14, lineHeight: 20, fontWeight: '800' },
+  preview: { height: 270, overflow: 'hidden', borderRadius: 26, borderWidth: 1, borderColor: 'rgba(103,232,249,0.18)', backgroundColor: '#020713', shadowColor: colors.cyan, shadowOpacity: 0.1, shadowRadius: 18 },
   previewBackground: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(2,7,19,0.72)' },
-  focusShade: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(2,7,19,0.12)' },
+  focusShade: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(2,7,19,0.1)' },
   previewImage: { ...StyleSheet.absoluteFillObject, opacity: 0.96 },
-  corner: { position: 'absolute', width: 40, height: 40, borderColor: colors.cyan },
-  topLeft: { top: 18, left: 18, borderTopWidth: 1.5, borderLeftWidth: 1.5 },
-  topRight: { top: 18, right: 18, borderTopWidth: 1.5, borderRightWidth: 1.5 },
-  bottomLeft: { bottom: 18, left: 18, borderBottomWidth: 1.5, borderLeftWidth: 1.5 },
-  bottomRight: { right: 18, bottom: 18, borderRightWidth: 1.5, borderBottomWidth: 1.5 },
-  scanPrompt: { position: 'absolute', left: 22, right: 22, bottom: 22, borderRadius: 22, borderWidth: 1, borderColor: 'rgba(103,232,249,0.22)', backgroundColor: 'rgba(2,7,19,0.7)', padding: 15 },
-  scanPromptTitle: { marginTop: 8, color: colors.text, fontSize: 22, fontWeight: '900' },
-  scanPromptCopy: { marginTop: 4, color: colors.muted, fontSize: 13, lineHeight: 18, fontWeight: '700' },
+  corner: { position: 'absolute', width: 36, height: 36, borderColor: colors.cyan },
+  topLeft: { top: 16, left: 16, borderTopWidth: 1.5, borderLeftWidth: 1.5 },
+  topRight: { top: 16, right: 16, borderTopWidth: 1.5, borderRightWidth: 1.5 },
+  bottomLeft: { bottom: 16, left: 16, borderBottomWidth: 1.5, borderLeftWidth: 1.5 },
+  bottomRight: { right: 16, bottom: 16, borderRightWidth: 1.5, borderBottomWidth: 1.5 },
+  scanPrompt: { position: 'absolute', left: 28, right: 28, top: 74, bottom: 74, borderRadius: 24, borderWidth: 1, borderColor: 'rgba(103,232,249,0.22)', backgroundColor: 'rgba(2,7,19,0.7)', padding: 18, alignItems: 'center', justifyContent: 'center' },
+  scanPromptTitle: { marginTop: 9, color: colors.text, fontSize: 23, fontWeight: '900', textAlign: 'center' },
+  scanPromptCopy: { marginTop: 5, color: colors.muted, fontSize: 13, lineHeight: 18, fontWeight: '700', textAlign: 'center' },
   processingOverlay: { ...StyleSheet.absoluteFillObject, alignItems: 'center', justifyContent: 'center', padding: 22, backgroundColor: 'rgba(2,7,19,0.78)' },
   processingTitle: { marginTop: 12, color: colors.text, fontSize: 21, fontWeight: '900' },
   processingCopy: { marginTop: 6, color: colors.muted, fontSize: 13, fontWeight: '700' },
-  captureDock: { marginTop: 12, alignSelf: 'center', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 18, borderRadius: 34, borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)', backgroundColor: 'rgba(2,7,19,0.88)', paddingHorizontal: 18, paddingVertical: 9, minWidth: 282 },
-  shutter: { width: 60, height: 60, alignItems: 'center', justifyContent: 'center', borderRadius: 30, backgroundColor: colors.cyan, shadowColor: colors.cyan, shadowOpacity: 0.38, shadowRadius: 14 },
-  dockButton: { width: 70, alignItems: 'center', justifyContent: 'center', gap: 4 },
+  captureDock: { marginTop: 10, alignSelf: 'center', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 14, borderRadius: 32, borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)', backgroundColor: 'rgba(2,7,19,0.88)', paddingHorizontal: 18, paddingVertical: 8, minWidth: 270 },
+  shutter: { width: 58, height: 58, alignItems: 'center', justifyContent: 'center', borderRadius: 29, backgroundColor: colors.cyan, shadowColor: colors.cyan, shadowOpacity: 0.38, shadowRadius: 14 },
+  dockButton: { width: 72, alignItems: 'center', justifyContent: 'center', gap: 4 },
   dockText: { color: colors.text, fontSize: 11, fontWeight: '900' },
-  notice: { marginTop: 10, color: colors.dim, fontSize: 12, lineHeight: 17, textAlign: 'center', fontWeight: '700' },
+  notice: { marginTop: 9, color: colors.dim, fontSize: 12, lineHeight: 17, textAlign: 'center', fontWeight: '700' },
   error: { marginTop: 10, color: colors.danger, fontWeight: '900', textAlign: 'center' },
-  inspirationCard: { marginTop: 12, marginBottom: 118, paddingVertical: 14 },
+  inspirationCard: { marginTop: 10, marginBottom: 118, paddingVertical: 14 },
   label: { color: colors.dim, fontSize: 10, fontWeight: '900', letterSpacing: 2.2, textTransform: 'uppercase' },
   ideaGrid: { marginTop: 12, flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   ideaTile: { width: '48%', minHeight: 58, borderRadius: 17, borderWidth: 1, borderColor: colors.border, backgroundColor: 'rgba(255,255,255,0.03)', padding: 12, justifyContent: 'space-between' },
