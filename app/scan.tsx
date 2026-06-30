@@ -247,7 +247,7 @@ const styles = StyleSheet.create({
   topRight: { top: 16, right: 16, borderTopWidth: 1.5, borderRightWidth: 1.5 },
   bottomLeft: { bottom: 16, left: 16, borderBottomWidth: 1.5, borderLeftWidth: 1.5 },
   bottomRight: { right: 16, bottom: 16, borderRightWidth: 1.5, borderBottomWidth: 1.5 },
-  scanPrompt: { position: 'absolute', left: 28, right: 28, top: 74, bottom: 74, borderRadius: 24, borderWidth: 1, borderColor: 'rgba(103,232,249,0.22)', backgroundColor: 'rgba(2,7,19,0.7)', padding: 18, alignItems: 'center', justifyContent: 'center' },
+  scanPrompt: { position: 'absolute', left: 32, right: 32, top: '50%', minHeight: 112, borderRadius: 24, borderWidth: 1, borderColor: 'rgba(103,232,249,0.24)', backgroundColor: 'rgba(2,7,19,0.74)', paddingHorizontal: 18, paddingVertical: 17, alignItems: 'center', justifyContent: 'center', transform: [{ translateY: -56 }] },
   scanPromptTitle: { marginTop: 9, color: colors.text, fontSize: 23, fontWeight: '900', textAlign: 'center' },
   scanPromptCopy: { marginTop: 5, color: colors.muted, fontSize: 13, lineHeight: 18, fontWeight: '700', textAlign: 'center' },
   processingOverlay: { ...StyleSheet.absoluteFillObject, alignItems: 'center', justifyContent: 'center', padding: 22, backgroundColor: 'rgba(2,7,19,0.78)' },
