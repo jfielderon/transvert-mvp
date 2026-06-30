@@ -7,11 +7,12 @@ import { GlassCard } from '@/components/GlassCard';
 import { Screen } from '@/components/Screen';
 import { formatGbp, getRateSnapshot, loadFxRates } from '@/services/fx';
 import type { FxRates } from '@/services/fx/types';
+import { LANGUAGE_OPTIONS, languageLabel, type LanguageCode } from '@/services/languages';
 import { SAMPLE_INPUT_PLACEHOLDER, prepareImageForManualText } from '@/services/ocr';
 import { detectPricesWithRates, totalGbp } from '@/services/priceParser';
 import { processScanInput } from '@/services/scan/processScan';
 import { uploadOcrImageToSupabase } from '@/services/supabase/storage';
-import { translateMenuText } from '@/services/translate';
+import { translateText } from '@/services/translate';
 import { saveScan } from '@/storage/scans';
 import { colors } from '@/theme/colors';
 
@@ -25,6 +26,14 @@ const scanIdeas = [
   { icon: 'pricetag-outline' as const, label: 'Label' },
 ];
 
+const QUICK_LANGUAGES: LanguageCode[] = ['auto', 'en', 'es', 'ku', 'ckb'];
+const TARGET_LANGUAGES: LanguageCode[] = ['en', 'es', 'ku', 'ckb', 'fr', 'de', 'it', 'pt', 'tr', 'ar'];
+
+function nextLanguage(current: LanguageCode, options: LanguageCode[]) {
+  const index = options.indexOf(current);
+  return options[(index + 1) % options.length] ?? options[0];
+}
+
 export default function ScanScreen() {
   const [imageUri, setImageUri] = useState<string | null>(null);
   const [text, setText] = useState('');
@@ -36,19 +45,35 @@ export default function ScanScreen() {
   const [notice, setNotice] = useState('Take a photo or upload a saved image.');
   const [error, setError] = useState<string | null>(null);
   const [rates, setRates] = useState<FxRates>(getRateSnapshot().rates);
+  const [sourceLanguage, setSourceLanguage] = useState<LanguageCode>('auto');
+  const [targetLanguage, setTargetLanguage] = useState<LanguageCode>('en');
 
   useEffect(() => { loadFxRates().then((snapshot) => setRates(snapshot.rates)); }, []);
 
   const prices = useMemo(() => detectPricesWithRates(text, rates, 'menu'), [rates, text]);
   const total = useMemo(() => totalGbp(prices), [prices]);
-  const translated = useMemo(() => translateMenuText(text), [text]);
+  const translatedPreview = useMemo(async () => {
+    if (!text.trim()) return '';
+    const output = await translateText({ text, sourceLanguage, targetLanguage });
+    return output.text;
+  }, [sourceLanguage, targetLanguage, text]);
+
+  const swapLanguages = () => {
+    if (sourceLanguage === 'auto') {
+      setSourceLanguage(targetLanguage === 'en' ? 'es' : 'en');
+      setTargetLanguage(targetLanguage === 'en' ? 'en' : sourceLanguage === 'auto' ? 'en' : sourceLanguage);
+      return;
+    }
+    setSourceLanguage(targetLanguage);
+    setTargetLanguage(sourceLanguage === 'auto' ? 'en' : sourceLanguage);
+  };
 
   const runPipeline = useCallback(async ({ image, manualText, source }: { image?: SelectedImage; manualText?: string; source: PipelineSource }) => {
     try {
       setIsProcessing(true);
       setError(null);
       setPipelineState(source === 'manual' ? 'Reading text' : 'Reading image');
-      setNotice('Scanning, translating and converting...');
+      setNotice(`Scanning and translating to ${languageLabel(targetLanguage)}...`);
 
       let workingText = manualText?.trim() ?? '';
       let workingOcrStatus: 'success' | 'fallback' | 'failed' = source === 'manual' ? 'fallback' : ocrStatus;
@@ -80,7 +105,15 @@ export default function ScanScreen() {
       if (!workingText) throw new Error('No readable text found. Try a closer image or paste the text manually.');
 
       setPipelineState('Building result');
-      const scanRecord = await processScanInput({ text: workingText, imageUri: savedImageUri, source, ocrStatus: workingOcrStatus, mode: 'menu' });
+      const scanRecord = await processScanInput({
+        text: workingText,
+        imageUri: savedImageUri,
+        source,
+        ocrStatus: workingOcrStatus,
+        mode: 'menu',
+        sourceLanguage,
+        targetLanguage,
+      });
       setPipelineState('Saving');
       await saveScan(scanRecord);
       router.push({ pathname: '/results', params: { id: scanRecord.id } });
@@ -91,7 +124,7 @@ export default function ScanScreen() {
     } finally {
       setIsProcessing(false);
     }
-  }, [imageUri, ocrStatus]);
+  }, [imageUri, ocrStatus, sourceLanguage, targetLanguage]);
 
   const uploadImage = useCallback(async () => {
     setError(null);
@@ -168,6 +201,27 @@ export default function ScanScreen() {
         <Text style={styles.heroCopy}>Translate menus. Understand signs. Convert prices.</Text>
       </View>
 
+      <GlassCard style={styles.languageCard}>
+        <View style={styles.languageHeader}>
+          <Text style={styles.label}>Language direction</Text>
+          <Pressable style={styles.swapButton} onPress={swapLanguages}>
+            <Ionicons name="swap-horizontal" color={colors.cyan} size={16} />
+            <Text style={styles.swapText}>Swap</Text>
+          </Pressable>
+        </View>
+        <View style={styles.languageRow}>
+          <Pressable style={styles.languagePill} onPress={() => setSourceLanguage(nextLanguage(sourceLanguage, QUICK_LANGUAGES))}>
+            <Text style={styles.languageSmall}>From</Text>
+            <Text style={styles.languageValue}>{languageLabel(sourceLanguage)}</Text>
+          </Pressable>
+          <Pressable style={styles.languagePill} onPress={() => setTargetLanguage(nextLanguage(targetLanguage, TARGET_LANGUAGES))}>
+            <Text style={styles.languageSmall}>To</Text>
+            <Text style={styles.languageValue}>{languageLabel(targetLanguage)}</Text>
+          </Pressable>
+        </View>
+        <Text style={styles.languageHint}>Tap either side to cycle languages. Kurdish includes Kurmanji and Sorani.</Text>
+      </GlassCard>
+
       <View style={styles.preview}>
         {imageUri ? <Image source={{ uri: imageUri }} resizeMode="cover" style={styles.previewImage} /> : <View style={styles.previewBackground} />}
         <View style={styles.focusShade} />
@@ -220,7 +274,7 @@ export default function ScanScreen() {
             <View style={styles.totalPill}><Text style={styles.totalLabel}>GBP</Text><Text style={styles.totalValue}>{prices.length ? formatGbp(total) : '—'}</Text></View>
           </View>
           <TextInput value={text} onChangeText={(value) => { setText(value); setError(null); setPipelineState(value.trim() ? 'Ready to process text' : 'Ready'); }} multiline placeholder="Paste text here if you need to fix the scan." placeholderTextColor={colors.dim} style={styles.input} />
-          {!!translated && <Text style={styles.translatedText} numberOfLines={4}>{translated}</Text>}
+          <Text style={styles.translatedText} numberOfLines={4}>Translation preview builds on the results page.</Text>
           <Pressable style={styles.processButton} onPress={() => runPipeline({ manualText: text, source: 'manual' })} disabled={isProcessing}>
             {isProcessing ? <ActivityIndicator color={colors.navy950} /> : <Text style={styles.processText}>Build result</Text>}
             <Ionicons name="arrow-forward" color={colors.navy950} size={19} />
@@ -238,6 +292,15 @@ const styles = StyleSheet.create({
   kicker: { color: colors.cyan, fontSize: 10, fontWeight: '900', letterSpacing: 3, textTransform: 'uppercase' },
   heroTitle: { marginTop: 4, color: colors.text, fontSize: 39, lineHeight: 41, fontWeight: '900' },
   heroCopy: { marginTop: 7, color: colors.muted, fontSize: 14, lineHeight: 20, fontWeight: '800' },
+  languageCard: { marginBottom: 12, gap: 10, paddingVertical: 13 },
+  languageHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 },
+  swapButton: { flexDirection: 'row', gap: 6, alignItems: 'center', borderRadius: 999, borderWidth: 1, borderColor: colors.border, paddingHorizontal: 10, paddingVertical: 7 },
+  swapText: { color: colors.cyan, fontSize: 11, fontWeight: '900' },
+  languageRow: { flexDirection: 'row', gap: 9 },
+  languagePill: { flex: 1, borderRadius: 18, borderWidth: 1, borderColor: 'rgba(103,232,249,0.2)', backgroundColor: 'rgba(255,255,255,0.03)', padding: 12 },
+  languageSmall: { color: colors.dim, fontSize: 10, fontWeight: '900', textTransform: 'uppercase', letterSpacing: 1.8 },
+  languageValue: { marginTop: 5, color: colors.text, fontSize: 14, fontWeight: '900' },
+  languageHint: { color: colors.dim, fontSize: 11, lineHeight: 16, fontWeight: '700' },
   preview: { height: 270, overflow: 'hidden', borderRadius: 26, borderWidth: 1, borderColor: 'rgba(103,232,249,0.18)', backgroundColor: '#020713', shadowColor: colors.cyan, shadowOpacity: 0.1, shadowRadius: 18 },
   previewBackground: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(2,7,19,0.72)' },
   focusShade: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(2,7,19,0.1)' },
