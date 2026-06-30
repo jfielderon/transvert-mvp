@@ -3,13 +3,13 @@ import type { FxRates } from '@/services/fx/types';
 import { createId } from '@/services/ids';
 import type { CurrencyCode, DetectedPrice, ScanMode } from '@/types/scan';
 
-const AMOUNT = String.raw`\d{1,3}(?:[.,]\d{3})*(?:[.,]\d{2})?|\d+(?:[.,]\d{2})?`;
+const AMOUNT = String.raw`\d{1,3}(?:[.,]\d{3})*(?:[.,]\d{1,2})?|\d+(?:[.,]\d{1,2})?`;
 const CURRENCY_SYMBOLS = String.raw`\u20ac\u00a3$`;
 const LEADING_SYMBOL_PATTERN = new RegExp(String.raw`(?<symbol>[${CURRENCY_SYMBOLS}])\s*(?<amount>${AMOUNT})\b`, 'g');
 const TRAILING_SYMBOL_PATTERN = new RegExp(String.raw`\b(?<amount>${AMOUNT})\s*(?<symbol>[${CURRENCY_SYMBOLS}])`, 'g');
 const CODE_PATTERN = new RegExp(String.raw`\b(?:(?<code1>EUR|GBP|USD)\s*(?<amount1>${AMOUNT})|(?<amount2>${AMOUNT})\s*(?<code2>EUR|GBP|USD))\b`, 'gi');
 const BARE_MENU_LINE_PATTERN = new RegExp(String.raw`^(?<item>[^\d\n][^\n]{2,90}?)\s*(?:[|:•·\-–—]+\s*)?(?<amount>${AMOUNT})(?:\s*(?:GF|VG|VE|V|IV|IVG|GFIVG|KCAL|CAL)\b)?\s*$`, 'i');
-const MENU_LINE_PRICE_PATTERN = new RegExp(String.raw`^(?<item>[^\d\n][^\n]{2,90}?)\s+(?<amount>\d{1,2})(?:\s*(?:GF|VG|VE|V|IV|IVG|GFIVG))?\s*$`, 'i');
+const MENU_LINE_PRICE_PATTERN = new RegExp(String.raw`^(?<item>[^\d\n][^\n]{2,90}?)\s+(?<amount>\d{1,2}(?:[.,]\d{1,2})?)(?:\s*(?:GF|VG|VE|V|IV|IVG|GFIVG))?\s*$`, 'i');
 
 function currencyFromToken(token: string): CurrencyCode {
   const upper = token.toUpperCase();
@@ -54,7 +54,7 @@ function sectionFor(text: string, start: number) {
   for (let index = before.length - 1; index >= 0; index -= 1) {
     const line = before[index];
     if (/[€£$]|\b(EUR|GBP|USD)\b/i.test(line)) continue;
-    if (/\d{1,2}\s*(GF|VG|VE|V|IV|IVG|GFIVG)?$/i.test(line)) continue;
+    if (/\d{1,2}(?:[.,]\d{1,2})?\s*(GF|VG|VE|V|IV|IVG|GFIVG)?$/i.test(line)) continue;
     if (line.length > 42) continue;
     if (/^[A-Z0-9 À-ÿ'&-]+$/.test(line) || /\b(menu|tapas|starters|mains|desserts|drinks|bebidas|postres|entrantes|appetizers|calientes|frias|frías)\b/i.test(line)) {
       return line;
