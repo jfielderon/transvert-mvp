@@ -7,12 +7,11 @@ import { GlassCard } from '@/components/GlassCard';
 import { Screen } from '@/components/Screen';
 import { formatGbp, getRateSnapshot, loadFxRates } from '@/services/fx';
 import type { FxRates } from '@/services/fx/types';
-import { LANGUAGE_OPTIONS, languageLabel, type LanguageCode } from '@/services/languages';
+import { languageLabel, type LanguageCode } from '@/services/languages';
 import { SAMPLE_INPUT_PLACEHOLDER, prepareImageForManualText } from '@/services/ocr';
 import { detectPricesWithRates, totalGbp } from '@/services/priceParser';
 import { processScanInput } from '@/services/scan/processScan';
 import { uploadOcrImageToSupabase } from '@/services/supabase/storage';
-import { translateText } from '@/services/translate';
 import { saveScan } from '@/storage/scans';
 import { colors } from '@/theme/colors';
 
@@ -52,20 +51,15 @@ export default function ScanScreen() {
 
   const prices = useMemo(() => detectPricesWithRates(text, rates, 'menu'), [rates, text]);
   const total = useMemo(() => totalGbp(prices), [prices]);
-  const translatedPreview = useMemo(async () => {
-    if (!text.trim()) return '';
-    const output = await translateText({ text, sourceLanguage, targetLanguage });
-    return output.text;
-  }, [sourceLanguage, targetLanguage, text]);
 
   const swapLanguages = () => {
     if (sourceLanguage === 'auto') {
       setSourceLanguage(targetLanguage === 'en' ? 'es' : 'en');
-      setTargetLanguage(targetLanguage === 'en' ? 'en' : sourceLanguage === 'auto' ? 'en' : sourceLanguage);
+      setTargetLanguage('en');
       return;
     }
     setSourceLanguage(targetLanguage);
-    setTargetLanguage(sourceLanguage === 'auto' ? 'en' : sourceLanguage);
+    setTargetLanguage(sourceLanguage);
   };
 
   const runPipeline = useCallback(async ({ image, manualText, source }: { image?: SelectedImage; manualText?: string; source: PipelineSource }) => {
