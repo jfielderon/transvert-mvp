@@ -40,6 +40,19 @@ export type RebuiltMenu = {
   note: string;
 };
 
+export type OcrLine = {
+  id: string;
+  text: string;
+  box?: unknown;
+  confidence?: number;
+};
+
+export type OcrQuality = {
+  score: number;
+  label: 'good' | 'fair' | 'poor';
+  reason: string;
+};
+
 export type ScanRecord = {
   id: string;
   createdAt: string;
@@ -57,6 +70,9 @@ export type ScanRecord = {
   fxFetchedAt?: string;
   realCost?: RealCostEstimate;
   rebuiltMenu?: RebuiltMenu;
+  ocrLines?: OcrLine[];
+  ocrQuality?: OcrQuality;
+  ocrWarnings?: string[];
 };
 
 export type OcrResult = {
