@@ -46,6 +46,8 @@ export type ScanRecord = {
   imageUri?: string;
   originalText: string;
   translatedText?: string;
+  sourceLanguage?: string;
+  targetLanguage?: string;
   prices: DetectedPrice[];
   estimatedTotalGbp: number;
   mode?: ScanMode;
