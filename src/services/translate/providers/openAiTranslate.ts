@@ -6,8 +6,11 @@ function normaliseTargetLanguage(language?: string): string {
   const raw = (language ?? 'en').trim().toLowerCase();
 
   const aliases: Record<string, string> = {
+    auto: 'en',
     english: 'en',
     spanish: 'es',
+    espanol: 'es',
+    español: 'es',
     french: 'fr',
     german: 'de',
     italian: 'it',
@@ -19,6 +22,11 @@ function normaliseTargetLanguage(language?: string): string {
     arabic: 'ar',
     japanese: 'ja',
     chinese: 'zh',
+    kurdish: 'ku',
+    kurmanji: 'ku',
+    'kurdish kurmanji': 'ku',
+    sorani: 'ckb',
+    'kurdish sorani': 'ckb',
   };
 
   return aliases[raw] ?? raw.split('-')[0] ?? 'en';
@@ -43,6 +51,13 @@ export const openAiTranslateProvider: TranslationProvider = {
         throw new Error('Missing Google API key');
       }
 
+      const body: Record<string, string> = {
+        q: request.text,
+        target: normaliseTargetLanguage(request.targetLanguage),
+        format: 'text',
+      };
+      if (request.sourceLanguage && request.sourceLanguage !== 'auto') body.source = request.sourceLanguage;
+
       const response = await fetch(
         `https://translation.googleapis.com/language/translate/v2?key=${encodeURIComponent(apiKey)}`,
         {
@@ -50,11 +65,7 @@ export const openAiTranslateProvider: TranslationProvider = {
           headers: {
             'Content-Type': 'application/json',
           },
-          body: JSON.stringify({
-            q: request.text,
-            target: normaliseTargetLanguage(request.targetLanguage),
-            format: 'text',
-          }),
+          body: JSON.stringify(body),
         }
       );
 
