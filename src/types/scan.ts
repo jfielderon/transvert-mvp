@@ -1,5 +1,5 @@
 export type CurrencyCode = 'EUR' | 'GBP' | 'USD';
-export type ScanMode = 'menu' | 'receipt' | 'document';
+export type ScanMode = 'auto' | 'menu' | 'receipt' | 'product' | 'sign' | 'document';
 
 export type DetectedPrice = {
   id: string;
