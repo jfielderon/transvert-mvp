@@ -11,19 +11,16 @@ import { languageLabel, type LanguageCode } from '@/services/languages';
 import { SAMPLE_INPUT_PLACEHOLDER, prepareImageForManualText } from '@/services/ocr';
 import { detectPricesWithRates, totalGbp } from '@/services/priceParser';
 import { processScanInput } from '@/services/scan/processScan';
+import { nextScanMode, SCAN_MODE_OPTIONS, scanModeLabel } from '@/services/scanModes';
 import { uploadOcrImageToSupabase } from '@/services/supabase/storage';
 import { saveScan } from '@/storage/scans';
 import { colors } from '@/theme/colors';
+import type { ScanMode } from '@/types/scan';
 
 type SelectedImage = { uri: string; base64?: string; mimeType?: string; imageUrl?: string };
 type PipelineSource = 'camera' | 'library' | 'manual';
 
-const scanIdeas = [
-  { icon: 'restaurant-outline' as const, label: 'Menu' },
-  { icon: 'receipt-outline' as const, label: 'Receipt' },
-  { icon: 'trail-sign-outline' as const, label: 'Sign' },
-  { icon: 'pricetag-outline' as const, label: 'Label' },
-];
+const scanIdeas = SCAN_MODE_OPTIONS.filter((option) => option.mode !== 'auto').slice(0, 4);
 
 const QUICK_LANGUAGES: LanguageCode[] = ['auto', 'en', 'es', 'ku', 'ckb'];
 const TARGET_LANGUAGES: LanguageCode[] = ['en', 'es', 'ku', 'ckb', 'fr', 'de', 'it', 'pt', 'tr', 'ar'];
@@ -46,6 +43,7 @@ export default function ScanScreen() {
   const [rates, setRates] = useState<FxRates>(getRateSnapshot().rates);
   const [sourceLanguage, setSourceLanguage] = useState<LanguageCode>('auto');
   const [targetLanguage, setTargetLanguage] = useState<LanguageCode>('en');
+  const [scanMode, setScanMode] = useState<ScanMode>('auto');
 
   useEffect(() => { loadFxRates().then((snapshot) => setRates(snapshot.rates)); }, []);
 
@@ -67,7 +65,7 @@ export default function ScanScreen() {
       setIsProcessing(true);
       setError(null);
       setPipelineState(source === 'manual' ? 'Reading text' : 'Reading image');
-      setNotice(`Scanning and translating to ${languageLabel(targetLanguage)}...`);
+      setNotice(`${scanModeLabel(scanMode)} scan · translating to ${languageLabel(targetLanguage)}...`);
 
       let workingText = manualText?.trim() ?? '';
       let workingOcrStatus: 'success' | 'fallback' | 'failed' = source === 'manual' ? 'fallback' : ocrStatus;
@@ -104,7 +102,7 @@ export default function ScanScreen() {
         imageUri: savedImageUri,
         source,
         ocrStatus: workingOcrStatus,
-        mode: 'menu',
+        mode: scanMode,
         sourceLanguage,
         targetLanguage,
       });
@@ -118,7 +116,7 @@ export default function ScanScreen() {
     } finally {
       setIsProcessing(false);
     }
-  }, [imageUri, ocrStatus, sourceLanguage, targetLanguage]);
+  }, [imageUri, ocrStatus, scanMode, sourceLanguage, targetLanguage]);
 
   const uploadImage = useCallback(async () => {
     setError(null);
@@ -192,18 +190,22 @@ export default function ScanScreen() {
       <View style={styles.hero}>
         <Text style={styles.kicker}>Transvert Lens</Text>
         <Text style={styles.heroTitle}>Scan away.</Text>
-        <Text style={styles.heroCopy}>Translate menus. Understand signs. Convert prices.</Text>
+        <Text style={styles.heroCopy}>Translate signs, products, receipts, menus and travel documents.</Text>
       </View>
 
       <GlassCard style={styles.languageCard}>
         <View style={styles.languageHeader}>
-          <Text style={styles.label}>Language direction</Text>
+          <Text style={styles.label}>Scan setup</Text>
           <Pressable style={styles.swapButton} onPress={swapLanguages}>
             <Ionicons name="swap-horizontal" color={colors.cyan} size={16} />
             <Text style={styles.swapText}>Swap</Text>
           </Pressable>
         </View>
         <View style={styles.languageRow}>
+          <Pressable style={styles.languagePill} onPress={() => setScanMode(nextScanMode(scanMode))}>
+            <Text style={styles.languageSmall}>Type</Text>
+            <Text style={styles.languageValue}>{scanModeLabel(scanMode)}</Text>
+          </Pressable>
           <Pressable style={styles.languagePill} onPress={() => setSourceLanguage(nextLanguage(sourceLanguage, QUICK_LANGUAGES))}>
             <Text style={styles.languageSmall}>From</Text>
             <Text style={styles.languageValue}>{languageLabel(sourceLanguage)}</Text>
@@ -213,7 +215,7 @@ export default function ScanScreen() {
             <Text style={styles.languageValue}>{languageLabel(targetLanguage)}</Text>
           </Pressable>
         </View>
-        <Text style={styles.languageHint}>Tap either side to cycle languages. Kurdish includes Kurmanji and Sorani.</Text>
+        <Text style={styles.languageHint}>Leave Type on Auto for most scans. Tap fields to cycle options.</Text>
       </GlassCard>
 
       <View style={styles.preview}>
@@ -227,7 +229,7 @@ export default function ScanScreen() {
           <View style={styles.scanPrompt}>
             <MaterialCommunityIcons name="line-scan" color={colors.cyan} size={25} />
             <Text style={styles.scanPromptTitle}>Point and scan</Text>
-            <Text style={styles.scanPromptCopy}>Menus, signs, receipts and labels.</Text>
+            <Text style={styles.scanPromptCopy}>Signs, receipts, products, flyers and menus.</Text>
           </View>
         ) : null}
         {isProcessing ? (
@@ -259,7 +261,7 @@ export default function ScanScreen() {
       {!text.trim() ? (
         <GlassCard style={styles.inspirationCard}>
           <Text style={styles.label}>What can I scan?</Text>
-          <View style={styles.ideaGrid}>{scanIdeas.map((idea) => <View key={idea.label} style={styles.ideaTile}><Ionicons name={idea.icon} color={colors.cyan} size={17} /><Text style={styles.ideaText}>{idea.label}</Text></View>)}</View>
+          <View style={styles.ideaGrid}>{scanIdeas.map((idea) => <View key={idea.label} style={styles.ideaTile}><Ionicons name={idea.icon as any} color={colors.cyan} size={17} /><Text style={styles.ideaText}>{idea.label}</Text><Text style={styles.ideaHint}>{idea.hint}</Text></View>)}</View>
         </GlassCard>
       ) : (
         <GlassCard style={styles.resultCard}>
@@ -290,10 +292,10 @@ const styles = StyleSheet.create({
   languageHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 },
   swapButton: { flexDirection: 'row', gap: 6, alignItems: 'center', borderRadius: 999, borderWidth: 1, borderColor: colors.border, paddingHorizontal: 10, paddingVertical: 7 },
   swapText: { color: colors.cyan, fontSize: 11, fontWeight: '900' },
-  languageRow: { flexDirection: 'row', gap: 9 },
-  languagePill: { flex: 1, borderRadius: 18, borderWidth: 1, borderColor: 'rgba(103,232,249,0.2)', backgroundColor: 'rgba(255,255,255,0.03)', padding: 12 },
-  languageSmall: { color: colors.dim, fontSize: 10, fontWeight: '900', textTransform: 'uppercase', letterSpacing: 1.8 },
-  languageValue: { marginTop: 5, color: colors.text, fontSize: 14, fontWeight: '900' },
+  languageRow: { flexDirection: 'row', gap: 7 },
+  languagePill: { flex: 1, borderRadius: 18, borderWidth: 1, borderColor: 'rgba(103,232,249,0.2)', backgroundColor: 'rgba(255,255,255,0.03)', padding: 10 },
+  languageSmall: { color: colors.dim, fontSize: 9, fontWeight: '900', textTransform: 'uppercase', letterSpacing: 1.4 },
+  languageValue: { marginTop: 5, color: colors.text, fontSize: 12, fontWeight: '900' },
   languageHint: { color: colors.dim, fontSize: 11, lineHeight: 16, fontWeight: '700' },
   preview: { height: 270, overflow: 'hidden', borderRadius: 26, borderWidth: 1, borderColor: 'rgba(103,232,249,0.18)', backgroundColor: '#020713', shadowColor: colors.cyan, shadowOpacity: 0.1, shadowRadius: 18 },
   previewBackground: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(2,7,19,0.72)' },
@@ -319,8 +321,9 @@ const styles = StyleSheet.create({
   inspirationCard: { marginTop: 10, marginBottom: 118, paddingVertical: 14 },
   label: { color: colors.dim, fontSize: 10, fontWeight: '900', letterSpacing: 2.2, textTransform: 'uppercase' },
   ideaGrid: { marginTop: 12, flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  ideaTile: { width: '48%', minHeight: 58, borderRadius: 17, borderWidth: 1, borderColor: colors.border, backgroundColor: 'rgba(255,255,255,0.03)', padding: 12, justifyContent: 'space-between' },
+  ideaTile: { width: '48%', minHeight: 70, borderRadius: 17, borderWidth: 1, borderColor: colors.border, backgroundColor: 'rgba(255,255,255,0.03)', padding: 12, justifyContent: 'space-between' },
   ideaText: { color: colors.text, fontSize: 14, fontWeight: '900' },
+  ideaHint: { marginTop: 5, color: colors.dim, fontSize: 10, lineHeight: 14, fontWeight: '700' },
   resultCard: { marginTop: 12, marginBottom: 118 },
   resultHeader: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: 14 },
   resultTitle: { marginTop: 6, color: colors.text, fontSize: 22, fontWeight: '900' },
