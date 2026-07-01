@@ -5,6 +5,7 @@ import { buildRebuiltMenu } from '@/services/menu/rebuildMenu';
 import { getLatestOcrMetadata } from '@/services/ocr/lastResult';
 import { detectPricesWithRates, totalGbp } from '@/services/priceParser';
 import { estimateRealCost } from '@/services/realCost';
+import { inferScanMode } from '@/services/scanModes';
 import { localFallbackTranslate, translateText } from '@/services/translate';
 import type { ScanMode, ScanRecord } from '@/types/scan';
 
@@ -64,8 +65,8 @@ function estimateTextQuality(text: string, lineCount: number) {
   if (priceLike >= 2) score += 8;
   if (shortWords > words.length * 0.28) score -= 18;
   score = Math.max(0, Math.min(100, score));
-  if (score >= 72) return { score, label: 'good', reason: 'Readable OCR with enough text for reliable menu parsing.' };
-  if (score >= 48) return { score, label: 'fair', reason: 'OCR is usable, but some menu lines may need checking.' };
+  if (score >= 72) return { score, label: 'good', reason: 'Readable OCR with enough text for reliable parsing.' };
+  if (score >= 48) return { score, label: 'fair', reason: 'OCR is usable, but some lines may need checking.' };
   return { score, label: 'poor', reason: 'OCR looks unreliable. Retake closer, flatter and without glare.' };
 }
 
@@ -76,11 +77,12 @@ function matchingCachedMetadata(trimmed: string) {
 }
 
 export async function processScanInput(input: ProcessScanInput): Promise<ScanRecord> {
-  const mode = input.mode ?? 'menu';
+  const selectedMode = input.mode ?? 'auto';
   const sourceLanguage = input.sourceLanguage ?? 'auto';
   const targetLanguage = input.targetLanguage ?? 'en';
   const target = translationTarget(targetLanguage);
   const trimmed = cleanupOcrText(input.text);
+  const mode = inferScanMode(trimmed, selectedMode);
   const cached = input.source === 'manual' ? null : matchingCachedMetadata(trimmed);
   const sourceLines = input.ocrLines?.length ? input.ocrLines : cached?.lines ?? [];
   const ocrLines = cleanLines(sourceLines);
@@ -96,7 +98,7 @@ export async function processScanInput(input: ProcessScanInput): Promise<ScanRec
     loadFxRates(),
     translateText({ text: trimmed, sourceLanguage, targetLanguage: target }),
   ]);
-  const prices = detectPricesWithRates(trimmed, fx.rates, mode);
+  const prices = detectPricesWithRates(trimmed, fx.rates, mode === 'auto' ? 'menu' : mode);
   const translatedItems = await Promise.all(
     prices.map(async (price) => {
       const itemText = price.itemText || price.context || '';
