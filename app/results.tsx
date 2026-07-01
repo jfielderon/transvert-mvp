@@ -6,6 +6,7 @@ import { GlassCard } from '@/components/GlassCard';
 import { Screen } from '@/components/Screen';
 import { languageLabel } from '@/services/languages';
 import { buildRebuiltMenu } from '@/services/menu/rebuildMenu';
+import { speakText, speechButtonLabel } from '@/services/speech';
 import { translateMenuText } from '@/services/translate';
 import { saveScanFeedback } from '@/services/userData';
 import { useScans } from '@/hooks/useScans';
@@ -19,6 +20,7 @@ export default function ResultsScreen() {
   const [showRaw, setShowRaw] = useState(false);
   const [saved, setSaved] = useState(false);
   const [feedback, setFeedback] = useState<'right' | 'wrong' | null>(null);
+  const [speechError, setSpeechError] = useState('');
   const scan = useMemo(() => scans.find((item) => item.id === id), [id, scans]);
 
   if (isLoading) return <Screen><Text style={styles.title}>Loading scan...</Text></Screen>;
@@ -26,6 +28,7 @@ export default function ResultsScreen() {
 
   const translatedText = scan.translatedText ?? translateMenuText(scan.originalText);
   const menu = scan.rebuiltMenu ?? buildRebuiltMenu(scan.originalText, scan.prices);
+  const spokenLanguage = scan.sourceLanguage && scan.sourceLanguage !== 'auto' ? scan.sourceLanguage : undefined;
   const direction = `${languageLabel(scan.sourceLanguage ?? 'auto')} → ${languageLabel(scan.targetLanguage ?? 'en')}`;
   const hasStructuredItems = Boolean(menu?.sections?.length && scan.prices.length);
 
@@ -38,6 +41,24 @@ export default function ResultsScreen() {
     setFeedback(verdict);
     await saveScanFeedback({ scanId: scan.id, verdict, mode: scan.mode ?? 'menu', originalText: scan.originalText, detectedPriceCount: scan.prices.length });
     await saveScan({ ...scan, translatedText, rebuiltMenu: menu, userFeedback: verdict } as any);
+  };
+
+  const speakOriginal = (value: string) => {
+    try {
+      setSpeechError('');
+      speakText(value, spokenLanguage);
+    } catch (error) {
+      setSpeechError(error instanceof Error ? error.message : 'Could not play audio on this device.');
+    }
+  };
+
+  const speakTranslation = () => {
+    try {
+      setSpeechError('');
+      speakText(translatedText, scan.targetLanguage ?? 'en');
+    } catch (error) {
+      setSpeechError(error instanceof Error ? error.message : 'Could not play audio on this device.');
+    }
   };
 
   return (
@@ -64,12 +85,15 @@ export default function ResultsScreen() {
           {hasStructuredItems ? (
             <GlassCard style={styles.card}>
               <View style={styles.menuHeader}><View style={{ flex: 1 }}><Text style={styles.label}>Translated items</Text><Text style={styles.menuTitle}>{menu?.title ?? 'Scan result'}</Text></View><View style={styles.countPill}><Text style={styles.count}>{menu?.itemCount ?? scan.prices.length}</Text><Text style={styles.countLabel}>items</Text></View></View>
-              {menu.sections.map((section) => <View key={section.title} style={styles.section}><Text style={styles.sectionTitle}>{section.title}</Text>{section.items.map((item) => <View key={item.id} style={styles.item}><View style={styles.itemTop}><View style={{ flex: 1 }}><Text style={styles.englishName}>{item.englishName}</Text><Text style={styles.originalName}>{item.originalName}</Text></View><View style={styles.priceStack}><Text style={styles.convertedPrice}>{item.convertedPrice}</Text><Text style={styles.originalPrice}>{item.originalPrice}</Text></View></View>{item.description ? <Text style={styles.description}>{item.description}</Text> : null}</View>)}</View>)}
+              {speechError ? <Text style={styles.speechError}>{speechError}</Text> : null}
+              {menu.sections.map((section) => <View key={section.title} style={styles.section}><Text style={styles.sectionTitle}>{section.title}</Text>{section.items.map((item) => <View key={item.id} style={styles.item}><View style={styles.itemTop}><View style={{ flex: 1 }}><Text style={styles.englishName}>{item.englishName}</Text><Text style={styles.originalName}>{item.originalName}</Text></View><View style={styles.priceStack}><Text style={styles.convertedPrice}>{item.convertedPrice}</Text><Text style={styles.originalPrice}>{item.originalPrice}</Text></View></View>{item.description ? <Text style={styles.description}>{item.description}</Text> : null}<Pressable style={styles.speakButton} onPress={() => speakOriginal(item.originalName)}><Ionicons name="volume-high-outline" color={colors.navy950} size={16} /><Text style={styles.speakText}>{speechButtonLabel(spokenLanguage)}</Text></Pressable></View>)}</View>)}
             </GlassCard>
           ) : (
             <GlassCard style={styles.card}>
               <Text style={styles.label}>Translation</Text>
               <Text style={styles.body}>{translatedText}</Text>
+              <Pressable style={styles.speakButton} onPress={speakTranslation}><Ionicons name="volume-high-outline" color={colors.navy950} size={16} /><Text style={styles.speakText}>Speak translation</Text></Pressable>
+              {speechError ? <Text style={styles.speechError}>{speechError}</Text> : null}
             </GlassCard>
           )}
         </>
@@ -116,6 +140,9 @@ const styles = StyleSheet.create({
   convertedPrice: { color: colors.cyan, fontSize: 17, fontWeight: '900' },
   originalPrice: { marginTop: 5, color: colors.text, fontSize: 12, fontWeight: '800' },
   description: { marginTop: 8, color: colors.muted, fontSize: 14, lineHeight: 20 },
+  speakButton: { marginTop: 10, alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center', gap: 7, borderRadius: 999, backgroundColor: colors.cyan, paddingHorizontal: 12, paddingVertical: 8 },
+  speakText: { color: colors.navy950, fontSize: 12, fontWeight: '900' },
+  speechError: { marginTop: 10, color: colors.danger, fontSize: 12, fontWeight: '800' },
   feedbackRow: { flexDirection: 'row', gap: 10, marginTop: 12 },
   feedbackButton: { flex: 1, height: 42, alignItems: 'center', justifyContent: 'center', borderRadius: 21, borderWidth: 1, borderColor: colors.border },
   feedbackActive: { backgroundColor: colors.cyan, borderColor: colors.cyan },
